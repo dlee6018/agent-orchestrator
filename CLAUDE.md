@@ -40,7 +40,11 @@ All code lives in `main.go` in a single `package main`. There are no subdirector
 - `autonomousLoop` — Agent loop: LLM decides → send to Claude Code → capture output → feed back to LLM → repeat; emits SSE events to the dashboard
 - `callOpenRouter` — Sends chat completion request to OpenRouter API, returns reply and token usage
 - `cleanPaneOutput` — Strips ANSI escapes, collapses blank lines, trims whitespace from pane captures
-- `buildSystemPrompt` — Returns the system prompt that instructs the orchestrator LLM
+- `buildSystemPrompt` — Returns the system prompt that instructs the orchestrator LLM (includes persistent memory if available)
+- `loadMemory` / `saveMemory` — Read/write `memory.json` (persistent facts across sessions)
+- `extractMemorySaves` — Scans LLM replies for `MEMORY_SAVE:` lines, returns extracted facts and cleaned reply
+- `deduplicateMemory` — Removes duplicate facts preserving order
+- `compactMemory` — Asks the LLM to consolidate facts when they exceed the threshold
 - `truncateForLog` — Truncates long strings for console logging
 - `runWithCleanup` — Wraps a function with optional signal handling and session cleanup
 - `sseBroker` — Fan-out SSE event broadcaster (subscribe/publish/unsubscribe)
@@ -65,6 +69,7 @@ All tmux commands go through `runTmux()` / `tmuxArgs()` which prepend `-L <socke
 | `DASHBOARD_ENABLED` | `true` | Enable/disable the web dashboard |
 | `DASHBOARD_PORT` | `0` (auto) | Port for the dashboard (0 = OS picks a free port) |
 | `DASHBOARD_OPEN` | `true` | Auto-open browser when dashboard starts |
+| `MEMORY_MAX_FACTS` | `50` | Threshold for triggering memory compaction |
 
 ## Build & Run
 

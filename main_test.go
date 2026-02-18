@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -256,9 +260,39 @@ func TestTruncateForLog_TinyMax(t *testing.T) {
 
 // System prompt contains the completion marker instruction.
 func TestBuildSystemPrompt_ContainsMarker(t *testing.T) {
-	prompt := buildSystemPrompt()
+	prompt := buildSystemPrompt(nil)
 	if !strings.Contains(prompt, taskCompleteMarker) {
 		t.Fatal("system prompt should reference TASK_COMPLETE marker")
+	}
+}
+
+// System prompt includes memory facts when provided.
+func TestBuildSystemPrompt_WithMemories(t *testing.T) {
+	memories := []string{"Go 1.23 with no external deps", "Tests must not use t.Parallel()"}
+	prompt := buildSystemPrompt(memories)
+	if !strings.Contains(prompt, "Memory from previous sessions") {
+		t.Fatal("prompt should include memory section header")
+	}
+	for _, fact := range memories {
+		if !strings.Contains(prompt, fact) {
+			t.Fatalf("prompt should include fact %q", fact)
+		}
+	}
+}
+
+// System prompt without memories has no memory section.
+func TestBuildSystemPrompt_NoMemories(t *testing.T) {
+	prompt := buildSystemPrompt(nil)
+	if strings.Contains(prompt, "Memory from previous sessions") {
+		t.Fatal("prompt should not include memory section when no memories")
+	}
+}
+
+// System prompt includes MEMORY_SAVE instruction.
+func TestBuildSystemPrompt_MemorySaveInstruction(t *testing.T) {
+	prompt := buildSystemPrompt(nil)
+	if !strings.Contains(prompt, "MEMORY_SAVE:") {
+		t.Fatal("prompt should include MEMORY_SAVE instruction")
 	}
 }
 
@@ -391,5 +425,469 @@ func TestCallOpenRouter_RequestStructure(t *testing.T) {
 	}
 	if fmt.Sprintf("%.1f", receivedReq.Temperature) != "0.7" {
 		t.Fatalf("temperature: got %v want 0.7", receivedReq.Temperature)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard / SSE broker unit tests
+// ---------------------------------------------------------------------------
+
+// A single subscriber receives published events.
+func TestSSEBroker_PublishSubscribe(t *testing.T) {
+	b := newSSEBroker()
+	ch, unsub := b.subscribe()
+	defer unsub()
+
+	event := iterationEvent{Type: "iteration_end", Iteration: 1}
+	b.publish(event)
+
+	select {
+	case msg := <-ch:
+		if !strings.Contains(msg, `"type":"iteration_end"`) {
+			t.Fatalf("unexpected message: %s", msg)
+		}
+		if !strings.Contains(msg, `"iteration":1`) {
+			t.Fatalf("unexpected message: %s", msg)
+		}
+		if !strings.HasPrefix(msg, "data: ") {
+			t.Fatalf("expected SSE data prefix, got: %s", msg)
+		}
+	default:
+		t.Fatal("expected a message on the channel")
+	}
+}
+
+// Multiple subscribers each receive the same event.
+func TestSSEBroker_MultipleClients(t *testing.T) {
+	b := newSSEBroker()
+	ch1, unsub1 := b.subscribe()
+	defer unsub1()
+	ch2, unsub2 := b.subscribe()
+	defer unsub2()
+
+	b.publish(iterationEvent{Type: "task_info", Task: "hello"})
+
+	for _, ch := range []<-chan string{ch1, ch2} {
+		select {
+		case msg := <-ch:
+			if !strings.Contains(msg, `"task":"hello"`) {
+				t.Fatalf("unexpected message: %s", msg)
+			}
+		default:
+			t.Fatal("expected a message on all channels")
+		}
+	}
+}
+
+// Late subscribers receive the last task_info event on connect.
+func TestSSEBroker_ReplayTaskInfo(t *testing.T) {
+	b := newSSEBroker()
+
+	// Publish task_info before any subscriber exists.
+	b.publish(iterationEvent{Type: "task_info", Task: "my-task", Model: "test-model"})
+
+	// A late subscriber should immediately receive the task_info replay.
+	ch, unsub := b.subscribe()
+	defer unsub()
+
+	select {
+	case msg := <-ch:
+		if !strings.Contains(msg, `"task":"my-task"`) {
+			t.Fatalf("replayed message missing task: %s", msg)
+		}
+		if !strings.Contains(msg, `"type":"task_info"`) {
+			t.Fatalf("replayed message missing type: %s", msg)
+		}
+	default:
+		t.Fatal("expected task_info replay on subscribe, got nothing")
+	}
+}
+
+// Late subscribers do NOT receive replay for non-task_info events.
+func TestSSEBroker_NoReplayForOtherEvents(t *testing.T) {
+	b := newSSEBroker()
+
+	// Publish a non-task_info event.
+	b.publish(iterationEvent{Type: "iteration_end", Iteration: 1})
+
+	ch, unsub := b.subscribe()
+	defer unsub()
+
+	select {
+	case msg := <-ch:
+		t.Fatalf("should not replay non-task_info events, got: %s", msg)
+	default:
+		// Expected: no replay.
+	}
+}
+
+// After unsubscribing, the channel is closed and no further events arrive.
+func TestSSEBroker_Unsubscribe(t *testing.T) {
+	b := newSSEBroker()
+	ch, unsub := b.subscribe()
+	unsub()
+
+	// Channel should be closed.
+	_, ok := <-ch
+	if ok {
+		t.Fatal("expected channel to be closed after unsubscribe")
+	}
+
+	// Publishing after unsubscribe should not panic.
+	b.publish(iterationEvent{Type: "complete"})
+}
+
+// A full buffer does not block the publisher.
+func TestSSEBroker_SlowClientDrop(t *testing.T) {
+	b := newSSEBroker()
+	ch, unsub := b.subscribe()
+	defer unsub()
+
+	// Fill the buffer (capacity 64).
+	for i := 0; i < 70; i++ {
+		b.publish(iterationEvent{Type: "iteration_end", Iteration: i})
+	}
+
+	// Should have 64 messages (buffer size), rest dropped.
+	count := 0
+	for {
+		select {
+		case <-ch:
+			count++
+		default:
+			goto done
+		}
+	}
+done:
+	if count != 64 {
+		t.Fatalf("expected 64 buffered messages, got %d", count)
+	}
+}
+
+// emitEvent with a nil broker does not panic.
+func TestEmitEvent_NilBroker(t *testing.T) {
+	emitEvent(nil, iterationEvent{Type: "complete"})
+}
+
+// iterationEvent marshals to expected JSON.
+func TestIterationEvent_JSON(t *testing.T) {
+	event := iterationEvent{
+		Type:         "iteration_end",
+		Iteration:    3,
+		MaxIter:      10,
+		Timestamp:    "2026-01-01T00:00:00Z",
+		DurationMs:   5000,
+		Tokens:       &tokenUsage{Prompt: 100, Completion: 50, Total: 150},
+		Orchestrator: "echo hello",
+		ClaudeOutput: "hello\n",
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	for _, want := range []string{`"type":"iteration_end"`, `"iteration":3`, `"max_iter":10`, `"duration_ms":5000`, `"prompt":100`, `"total":150`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("JSON missing %q: %s", want, s)
+		}
+	}
+	// omitempty: error should not appear.
+	if strings.Contains(s, `"error"`) {
+		t.Fatalf("empty error should be omitted: %s", s)
+	}
+}
+
+// Dashboard serves static files from the embedded filesystem.
+func TestStartDashboard_ServesStaticFiles(t *testing.T) {
+	b := newSSEBroker()
+	addr, err := startDashboard(b, 0)
+	if err != nil {
+		t.Fatalf("startDashboard: %v", err)
+	}
+	base := "http://" + addr
+
+	// Check index.html
+	resp, err := http.Get(base + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("GET /: status %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "Orchestrator Dashboard") {
+		t.Fatal("index.html does not contain expected title")
+	}
+
+	// Check style.css
+	resp2, err := http.Get(base + "/style.css")
+	if err != nil {
+		t.Fatalf("GET /style.css: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != 200 {
+		t.Fatalf("GET /style.css: status %d", resp2.StatusCode)
+	}
+
+	// Check app.js
+	resp3, err := http.Get(base + "/app.js")
+	if err != nil {
+		t.Fatalf("GET /app.js: %v", err)
+	}
+	defer resp3.Body.Close()
+	if resp3.StatusCode != 200 {
+		t.Fatalf("GET /app.js: status %d", resp3.StatusCode)
+	}
+}
+
+// Dashboard SSE endpoint streams events.
+func TestStartDashboard_SSEStream(t *testing.T) {
+	b := newSSEBroker()
+	addr, err := startDashboard(b, 0)
+	if err != nil {
+		t.Fatalf("startDashboard: %v", err)
+	}
+
+	resp, err := http.Get("http://" + addr + "/events")
+	if err != nil {
+		t.Fatalf("GET /events: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("unexpected content-type: %s", resp.Header.Get("Content-Type"))
+	}
+
+	// Read the initial "connected" event.
+	reader := bufio.NewReader(resp.Body)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read first line: %v", err)
+	}
+	if !strings.Contains(line, "connected") {
+		t.Fatalf("expected connected event, got: %s", line)
+	}
+
+	// Publish an event and verify it arrives.
+	b.publish(iterationEvent{Type: "task_info", Task: "test-task"})
+
+	// Skip empty lines from previous event, then read next data line.
+	for {
+		line, err = reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		line = strings.TrimSpace(line)
+		if line != "" {
+			break
+		}
+	}
+	if !strings.Contains(line, "test-task") {
+		t.Fatalf("expected task_info event with test-task, got: %s", line)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Persistent memory unit tests
+// ---------------------------------------------------------------------------
+
+// loadMemory returns nil for a missing file.
+func TestLoadMemory_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	facts, err := loadMemory(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if facts != nil {
+		t.Fatalf("expected nil, got %v", facts)
+	}
+}
+
+// loadMemory reads a valid memory.json file.
+func TestLoadMemory_ValidFile(t *testing.T) {
+	dir := t.TempDir()
+	data := `["fact one", "fact two"]`
+	if err := os.WriteFile(filepath.Join(dir, "memory.json"), []byte(data), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	facts, err := loadMemory(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(facts) != 2 || facts[0] != "fact one" || facts[1] != "fact two" {
+		t.Fatalf("unexpected facts: %v", facts)
+	}
+}
+
+// loadMemory returns an error for malformed JSON.
+func TestLoadMemory_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "memory.json"), []byte("not json"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, err := loadMemory(dir)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+// saveMemory writes facts to memory.json and they can be read back.
+func TestSaveMemory_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	facts := []string{"fact A", "fact B"}
+	if err := saveMemory(dir, facts); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := loadMemory(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(loaded) != 2 || loaded[0] != "fact A" || loaded[1] != "fact B" {
+		t.Fatalf("round-trip mismatch: %v", loaded)
+	}
+}
+
+// saveMemory with nil writes an empty array.
+func TestSaveMemory_NilWritesEmptyArray(t *testing.T) {
+	dir := t.TempDir()
+	if err := saveMemory(dir, nil); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "memory.json"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != "[]" {
+		t.Fatalf("expected empty JSON array, got: %s", data)
+	}
+}
+
+// extractMemorySaves extracts MEMORY_SAVE lines and returns cleaned reply.
+func TestExtractMemorySaves_Basic(t *testing.T) {
+	reply := "do something\nMEMORY_SAVE: project uses Go 1.23\nmore text\nMEMORY_SAVE: no external deps\nfinal line"
+	facts, cleaned := extractMemorySaves(reply)
+	if len(facts) != 2 {
+		t.Fatalf("expected 2 facts, got %d: %v", len(facts), facts)
+	}
+	if facts[0] != "project uses Go 1.23" || facts[1] != "no external deps" {
+		t.Fatalf("unexpected facts: %v", facts)
+	}
+	if strings.Contains(cleaned, "MEMORY_SAVE") {
+		t.Fatalf("cleaned reply should not contain MEMORY_SAVE: %q", cleaned)
+	}
+	if !strings.Contains(cleaned, "do something") || !strings.Contains(cleaned, "more text") || !strings.Contains(cleaned, "final line") {
+		t.Fatalf("cleaned reply missing expected text: %q", cleaned)
+	}
+}
+
+// extractMemorySaves returns no facts when none present.
+func TestExtractMemorySaves_NoFacts(t *testing.T) {
+	reply := "just a normal reply\nwith multiple lines"
+	facts, cleaned := extractMemorySaves(reply)
+	if len(facts) != 0 {
+		t.Fatalf("expected 0 facts, got %d", len(facts))
+	}
+	if cleaned != reply {
+		t.Fatalf("cleaned should equal original: got %q", cleaned)
+	}
+}
+
+// extractMemorySaves ignores empty MEMORY_SAVE lines.
+func TestExtractMemorySaves_EmptyFact(t *testing.T) {
+	reply := "text\nMEMORY_SAVE: \nmore"
+	facts, _ := extractMemorySaves(reply)
+	if len(facts) != 0 {
+		t.Fatalf("expected 0 facts for empty value, got %d", len(facts))
+	}
+}
+
+// deduplicateMemory removes duplicates preserving order.
+func TestDeduplicateMemory(t *testing.T) {
+	facts := []string{"a", "b", "a", "c", "b", "d"}
+	got := deduplicateMemory(facts)
+	want := []string{"a", "b", "c", "d"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("index %d: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// compactMemory parses a valid JSON array from the LLM response.
+func TestCompactMemory_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := openRouterResponse{
+			ID: "test-id",
+			Choices: []openRouterChoice{
+				{Message: openRouterMessage{Role: "assistant", Content: `["consolidated fact 1", "consolidated fact 2"]`}},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	oldEndpoint := openRouterEndpoint
+	openRouterEndpoint = srv.URL
+	t.Cleanup(func() { openRouterEndpoint = oldEndpoint })
+
+	facts := []string{"fact 1", "fact 2", "fact 1 duplicate", "fact 3"}
+	compacted, err := compactMemory("key", "model", facts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(compacted) != 2 || compacted[0] != "consolidated fact 1" {
+		t.Fatalf("unexpected compacted facts: %v", compacted)
+	}
+}
+
+// compactMemory returns original facts on API error.
+func TestCompactMemory_APIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":{"message":"server error"}}`))
+	}))
+	defer srv.Close()
+
+	oldEndpoint := openRouterEndpoint
+	openRouterEndpoint = srv.URL
+	t.Cleanup(func() { openRouterEndpoint = oldEndpoint })
+
+	facts := []string{"fact A", "fact B"}
+	got, err := compactMemory("key", "model", facts)
+	if err == nil {
+		t.Fatal("expected error from compactMemory")
+	}
+	if len(got) != 2 || got[0] != "fact A" {
+		t.Fatalf("expected original facts on error, got: %v", got)
+	}
+}
+
+// compactMemory handles JSON wrapped in markdown code fences.
+func TestCompactMemory_MarkdownFences(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := openRouterResponse{
+			ID: "test-id",
+			Choices: []openRouterChoice{
+				{Message: openRouterMessage{Role: "assistant", Content: "```json\n[\"fact\"]\n```"}},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	oldEndpoint := openRouterEndpoint
+	openRouterEndpoint = srv.URL
+	t.Cleanup(func() { openRouterEndpoint = oldEndpoint })
+
+	got, err := compactMemory("key", "model", []string{"old fact"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0] != "fact" {
+		t.Fatalf("unexpected result: %v", got)
 	}
 }

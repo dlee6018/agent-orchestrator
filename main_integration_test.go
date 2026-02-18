@@ -393,7 +393,7 @@ func TestIntegration_AutonomousLoop_CompletesTask(t *testing.T) {
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "echo a marker", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "echo a marker", nil, nil)
 
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 API calls, got %d", callCount)
@@ -422,7 +422,7 @@ func TestIntegration_AutonomousLoop_MaxIterations(t *testing.T) {
 	setupAutonomous(t, srv.URL, 3)
 	createTestSession(t, session, workDir, command)
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "never-ending task", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "never-ending task", nil, nil)
 
 	if callCount != 3 {
 		t.Fatalf("expected exactly 3 API calls (maxIterations=3), got %d", callCount)
@@ -455,7 +455,7 @@ func TestIntegration_AutonomousLoop_FeedbackLoop(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "echo test", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "echo test", nil, nil)
 
 	if len(secondCallMessages) == 0 {
 		t.Fatal("second call messages not captured")
@@ -504,7 +504,7 @@ func TestIntegration_AutonomousLoop_ConversationHistoryStructure(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "run two commands", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "run two commands", nil, nil)
 
 	if len(allCapturedMessages) < 3 {
 		t.Fatalf("expected at least 3 API calls, got %d", len(allCapturedMessages))
@@ -593,7 +593,7 @@ func TestIntegration_AutonomousLoop_TaskCompleteEmbedded(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "embedded completion test", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "embedded completion test", nil, nil)
 
 	// Should have completed after 2 iterations (not run to maxIterations).
 	if callCount != 2 {
@@ -630,7 +630,7 @@ func TestIntegration_AutonomousLoop_APIErrorAbort(t *testing.T) {
 	createTestSession(t, session, workDir, command)
 
 	start := time.Now()
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "doomed task", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "doomed task", nil, nil)
 	elapsed := time.Since(start)
 
 	calls := int(atomic.LoadInt32(&apiCalls))
@@ -673,7 +673,7 @@ func TestIntegration_AutonomousLoop_APIErrorRecovery(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "transient error task", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "transient error task", nil, nil)
 
 	calls := int(atomic.LoadInt32(&apiCalls))
 	if calls != 3 {
@@ -724,7 +724,7 @@ func TestIntegration_AutonomousLoop_MultiStepTask(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "create and verify file", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "create and verify file", nil, nil)
 
 	if callCount != 3 {
 		t.Fatalf("expected 3 API calls for multi-step task, got %d", callCount)
@@ -789,7 +789,7 @@ func TestIntegration_AutonomousLoop_TmuxRecoveryMidLoop(t *testing.T) {
 		_ = runTmux("kill-session", "-t", session)
 	}()
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "survive tmux kill", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "survive tmux kill", nil, nil)
 
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 API calls, got %d", callCount)
@@ -852,7 +852,7 @@ func TestIntegration_AutonomousLoop_APIKeyAndModel(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "sk-test-key-123", "anthropic/claude-sonnet-4", "api key test", nil)
+	autonomousLoop(session, workDir, command, "sk-test-key-123", "anthropic/claude-sonnet-4", "api key test", nil, nil)
 
 	if receivedAuth != "Bearer sk-test-key-123" {
 		t.Fatalf("expected auth header %q, got %q", "Bearer sk-test-key-123", receivedAuth)
@@ -881,7 +881,7 @@ func TestIntegration_AutonomousLoop_ImmediateComplete(t *testing.T) {
 		t.Fatalf("initial capture: %v", err)
 	}
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "instant done", nil)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "instant done", nil, nil)
 
 	if callCount != 1 {
 		t.Fatalf("expected exactly 1 API call, got %d", callCount)
@@ -927,7 +927,7 @@ func TestIntegration_AutonomousLoop_EmitsSSEEvents(t *testing.T) {
 	ch, unsub := broker.subscribe()
 	defer unsub()
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "emit SSE events", broker)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "emit SSE events", broker, nil)
 
 	// Drain all events from the channel.
 	var events []iterationEvent
@@ -1015,7 +1015,7 @@ func TestIntegration_AutonomousLoop_SSEEventContent(t *testing.T) {
 	ch, unsub := broker.subscribe()
 	defer unsub()
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "content test", broker)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "content test", broker, nil)
 
 	// Drain events and find the first iteration_end with Claude output.
 	var iterEndEvents []iterationEvent
@@ -1070,7 +1070,7 @@ func TestIntegration_AutonomousLoop_SSEMaxIterations(t *testing.T) {
 	ch, unsub := broker.subscribe()
 	defer unsub()
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "max iter test", broker)
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "max iter test", broker, nil)
 
 	// Drain and find the complete event.
 	var completeEvent *iterationEvent

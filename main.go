@@ -105,6 +105,7 @@ func loadEnvFile(path string) error {
 		if eq <= 0 {
 			continue
 		}
+		// key=value format in .env
 		key := strings.TrimSpace(line[:eq])
 		value := strings.TrimSpace(line[eq+1:])
 		// Strip matching surrounding quotes (single or double).
@@ -775,6 +776,7 @@ Rules:
 - If an approach fails, try a different strategy — do not repeat the same failed command.
 - If Claude Code shows an error, read it carefully and adapt.
 - Keep your inputs concise and focused on the task.
+- After each action, suggest the next steps so there is always forward progress. Do not wait passively — proactively identify what should be done next and continue working.
 
 When the task is fully complete and you have verified the results, respond with exactly:
 TASK_COMPLETE

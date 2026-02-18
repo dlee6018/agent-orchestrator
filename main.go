@@ -3,10 +3,13 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -35,10 +39,14 @@ var maxSendRetries = 2                            // 1 initial attempt + 1 retry
 
 // Autonomous mode settings (var so tests can override).
 var openRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
-var maxIterations = 0 // 0 means unlimited; overridden in tests
+var maxIterations = 0  // 0 means unlimited; overridden in tests
+var maxFacts = 50      // memory compaction threshold; overridden via MEMORY_MAX_FACTS
 
 const defaultOpenRouterModel = "anthropic/claude-opus-4.6"
 const taskCompleteMarker = "TASK_COMPLETE"
+
+//go:embed web/*
+var webContent embed.FS
 
 // ansiPattern matches ANSI escape sequences (CSI sequences and OSC sequences).
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x1b]*\x1b\\|\x1b\][^\x07]*\x07`)
@@ -80,6 +88,157 @@ type openRouterError struct {
 		Message string `json:"message"`
 		Code    int    `json:"code"`
 	} `json:"error"`
+}
+
+// Dashboard types.
+
+type iterationEvent struct {
+	Type         string      `json:"type"`                    // "task_info", "iteration_start", "iteration_end", "error", "complete"
+	Iteration    int         `json:"iteration"`
+	MaxIter      int         `json:"max_iter"`
+	Timestamp    string      `json:"timestamp"`
+	DurationMs   int64       `json:"duration_ms,omitempty"`
+	Tokens       *tokenUsage `json:"tokens,omitempty"`
+	Orchestrator string      `json:"orchestrator,omitempty"`
+	ClaudeOutput string      `json:"claude_output,omitempty"`
+	Error        string      `json:"error,omitempty"`
+	Task         string      `json:"task,omitempty"`
+	Model        string      `json:"model,omitempty"`
+}
+
+type tokenUsage struct {
+	Prompt     int `json:"prompt"`
+	Completion int `json:"completion"`
+	Total      int `json:"total"`
+}
+
+// sseBroker manages fan-out of SSE events to multiple connected clients.
+// It retains the last task_info payload so late-connecting clients (or
+// reconnects) immediately receive the current task metadata.
+type sseBroker struct {
+	mu           sync.Mutex
+	clients      []chan string
+	lastTaskInfo string // SSE payload for the most recent task_info event
+}
+
+func newSSEBroker() *sseBroker {
+	return &sseBroker{}
+}
+
+// subscribe adds a new client and returns its event channel and an unsubscribe function.
+// If a task_info event was previously published, it is replayed to the new client immediately.
+func (b *sseBroker) subscribe() (<-chan string, func()) {
+	ch := make(chan string, 64)
+	b.mu.Lock()
+	b.clients = append(b.clients, ch)
+	// Replay the last task_info so late joiners see the task metadata.
+	if b.lastTaskInfo != "" {
+		select {
+		case ch <- b.lastTaskInfo:
+		default:
+		}
+	}
+	b.mu.Unlock()
+	return ch, func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		for i, c := range b.clients {
+			if c == ch {
+				b.clients = append(b.clients[:i], b.clients[i+1:]...)
+				close(ch)
+				return
+			}
+		}
+	}
+}
+
+// publish sends an event to all connected clients (non-blocking).
+// task_info events are retained so they can be replayed to late subscribers.
+func (b *sseBroker) publish(event iterationEvent) {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	payload := fmt.Sprintf("data: %s\n\n", data)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if event.Type == "task_info" {
+		b.lastTaskInfo = payload
+	}
+	for _, ch := range b.clients {
+		select {
+		case ch <- payload:
+		default:
+		}
+	}
+}
+
+// emitEvent publishes an event to the SSE broker if it is non-nil.
+func emitEvent(broker *sseBroker, event iterationEvent) {
+	if broker != nil {
+		broker.publish(event)
+	}
+}
+
+// startDashboard starts the web dashboard HTTP server.
+// It returns the address the server is listening on.
+func startDashboard(broker *sseBroker, port int) (string, error) {
+	mux := http.NewServeMux()
+
+	webFS, err := fs.Sub(webContent, "web")
+	if err != nil {
+		return "", fmt.Errorf("startDashboard: fs.Sub: %w", err)
+	}
+	mux.Handle("/", http.FileServer(http.FS(webFS)))
+
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		ch, unsubscribe := broker.subscribe()
+		defer unsubscribe()
+
+		fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n")
+		flusher.Flush()
+
+		for {
+			select {
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				fmt.Fprint(w, msg)
+				flusher.Flush()
+			case <-r.Context().Done():
+				return
+			}
+		}
+	})
+
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", fmt.Errorf("startDashboard: listen: %w", err)
+	}
+
+	actualAddr := listener.Addr().String()
+	server := &http.Server{Handler: mux}
+	go server.Serve(listener)
+
+	return actualAddr, nil
+}
+
+// openBrowser attempts to open the URL in the default browser.
+func openBrowser(url string) {
+	_ = exec.Command("open", url).Start()
 }
 
 // loadEnvFile reads a .env file and sets any KEY=VALUE pairs as environment
@@ -184,6 +343,11 @@ func main() {
 				maxIterations = n
 			}
 		}
+		if v := os.Getenv("MEMORY_MAX_FACTS"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				maxFacts = n
+			}
+		}
 
 		fmt.Print("Enter task description: ")
 		scanner := bufio.NewScanner(os.Stdin)
@@ -198,8 +362,37 @@ func main() {
 			os.Exit(1)
 		}
 
+		memories, memErr := loadMemory(workDir)
+		if memErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to load memory: %v\n", memErr)
+		} else if len(memories) > 0 {
+			fmt.Printf("Loaded %d memory facts from %s\n", len(memories), memoryFileName)
+		}
+
+		var broker *sseBroker
+		if envBool("DASHBOARD_ENABLED", true) {
+			broker = newSSEBroker()
+			dashPort := 0
+			if v := os.Getenv("DASHBOARD_PORT"); v != "" {
+				if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+					dashPort = n
+				}
+			}
+			addr, dashErr := startDashboard(broker, dashPort)
+			if dashErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to start dashboard: %v\n", dashErr)
+				broker = nil
+			} else {
+				dashURL := fmt.Sprintf("http://%s", addr)
+				fmt.Printf("Dashboard: %s\n", dashURL)
+				if envBool("DASHBOARD_OPEN", true) {
+					openBrowser(dashURL)
+				}
+			}
+		}
+
 		runWithCleanup(session, terminateOnQuit, func() {
-			autonomousLoop(session, workDir, command, apiKey, model, task)
+			autonomousLoop(session, workDir, command, apiKey, model, task, broker, memories)
 		})
 	} else {
 		fmt.Printf("Session %q is ready. Type messages and press Enter. Use /quit to exit.\n", session)
@@ -694,6 +887,122 @@ func validateSessionName(name string) error {
 }
 
 // ---------------------------------------------------------------------------
+// Persistent memory
+// ---------------------------------------------------------------------------
+
+const memoryFileName = "memory.json"
+
+// loadMemory reads the memory file from workDir and returns the stored facts.
+// Returns nil, nil if the file does not exist.
+func loadMemory(workDir string) ([]string, error) {
+	path := filepath.Join(workDir, memoryFileName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("loadMemory: %w", err)
+	}
+	var facts []string
+	if err := json.Unmarshal(data, &facts); err != nil {
+		return nil, fmt.Errorf("loadMemory: unmarshal: %w", err)
+	}
+	return facts, nil
+}
+
+// saveMemory writes the facts to the memory file in workDir.
+func saveMemory(workDir string, facts []string) error {
+	if facts == nil {
+		facts = []string{}
+	}
+	data, err := json.MarshalIndent(facts, "", "  ")
+	if err != nil {
+		return fmt.Errorf("saveMemory: marshal: %w", err)
+	}
+	path := filepath.Join(workDir, memoryFileName)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("saveMemory: write: %w", err)
+	}
+	return nil
+}
+
+// extractMemorySaves scans the LLM reply for lines matching "MEMORY_SAVE: <text>",
+// collects them as new facts, and returns the cleaned reply with those lines removed.
+func extractMemorySaves(reply string) ([]string, string) {
+	var facts []string
+	var kept []string
+	for _, line := range strings.Split(reply, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if after, ok := strings.CutPrefix(trimmed, "MEMORY_SAVE:"); ok {
+			fact := strings.TrimSpace(after)
+			if fact != "" {
+				facts = append(facts, fact)
+			}
+		} else {
+			kept = append(kept, line)
+		}
+	}
+	return facts, strings.Join(kept, "\n")
+}
+
+// deduplicateMemory returns facts with duplicates removed, preserving order.
+func deduplicateMemory(facts []string) []string {
+	seen := make(map[string]bool, len(facts))
+	var out []string
+	for _, f := range facts {
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// compactMemory asks the LLM to consolidate a list of facts into a shorter list.
+// On failure it returns the original facts unchanged.
+func compactMemory(apiKey, model string, facts []string) ([]string, error) {
+	factsJSON, err := json.Marshal(facts)
+	if err != nil {
+		return facts, nil
+	}
+	prompt := fmt.Sprintf(`You are a memory compaction assistant. Below is a JSON array of facts from previous sessions. Consolidate them into a shorter list:
+- Merge duplicate or near-duplicate entries
+- Remove stale or irrelevant entries
+- Combine related items into single entries
+- Keep the most important and actionable facts
+
+Return ONLY a valid JSON array of strings, nothing else.
+
+Facts:
+%s`, string(factsJSON))
+
+	messages := []openRouterMessage{
+		{Role: "user", Content: prompt},
+	}
+	reply, _, err := callOpenRouter(apiKey, model, messages, 0.2)
+	if err != nil {
+		return facts, fmt.Errorf("compactMemory: %w", err)
+	}
+
+	// Extract JSON array from the reply (handle possible markdown fences).
+	cleaned := strings.TrimSpace(reply)
+	if start := strings.Index(cleaned, "["); start >= 0 {
+		if end := strings.LastIndex(cleaned, "]"); end > start {
+			cleaned = cleaned[start : end+1]
+		}
+	}
+
+	var compacted []string
+	if err := json.Unmarshal([]byte(cleaned), &compacted); err != nil {
+		return facts, fmt.Errorf("compactMemory: parse response: %w", err)
+	}
+	if len(compacted) == 0 {
+		return facts, nil
+	}
+	return compacted, nil
+}
+
+// ---------------------------------------------------------------------------
 // Autonomous mode
 // ---------------------------------------------------------------------------
 
@@ -763,8 +1072,8 @@ func cleanPaneOutput(raw string) string {
 }
 
 // buildSystemPrompt returns the system prompt for the orchestrator LLM.
-func buildSystemPrompt() string {
-	return `You are an autonomous agent driving a Claude Code CLI session via tmux.
+func buildSystemPrompt(memories []string) string {
+	base := `You are an autonomous agent driving a Claude Code CLI session via tmux.
 
 Your responses are sent directly as keystrokes to the Claude Code terminal. Do NOT wrap your replies in markdown code fences or add commentary — type exactly what Claude Code should receive as input.
 
@@ -777,11 +1086,25 @@ Rules:
 - If Claude Code shows an error, read it carefully and adapt.
 - Keep your inputs concise and focused on the task.
 - After each action, suggest the next steps so there is always forward progress. Do not wait passively — proactively identify what should be done next and continue working.
+- To save a fact for future sessions, include a line starting with "MEMORY_SAVE: " followed by the fact. These lines will be stripped before sending to Claude Code. Use this to remember project conventions, pitfalls, user preferences, or anything useful across sessions.
 
 When the task is fully complete and you have verified the results, respond with exactly:
 TASK_COMPLETE
 
 Only send TASK_COMPLETE when you are confident the task is done. Do not send it prematurely.`
+
+	if len(memories) > 0 {
+		var sb strings.Builder
+		sb.WriteString(base)
+		sb.WriteString("\n\n## Memory from previous sessions\n")
+		for _, fact := range memories {
+			sb.WriteString("- ")
+			sb.WriteString(fact)
+			sb.WriteByte('\n')
+		}
+		return sb.String()
+	}
+	return base
 }
 
 // truncateForLog truncates s to maxLen characters, appending "..." if truncated.
@@ -799,7 +1122,9 @@ func truncateForLog(s string, maxLen int) string {
 // It sends the task to the LLM, relays its decisions to Claude Code,
 // and feeds back the pane output until the LLM signals TASK_COMPLETE.
 // If maxIterations > 0 the loop stops after that many iterations.
-func autonomousLoop(session, workDir, command, apiKey, model, task string) {
+// memories carries persistent facts from previous sessions; new facts
+// are extracted from MEMORY_SAVE: lines and saved on exit.
+func autonomousLoop(session, workDir, command, apiKey, model, task string, broker *sseBroker, memories []string) {
 	fmt.Println("========================================")
 	fmt.Println("AUTONOMOUS MODE")
 	fmt.Printf("Model: %s\n", model)
@@ -811,8 +1136,27 @@ func autonomousLoop(session, workDir, command, apiKey, model, task string) {
 	fmt.Printf("Task: %s\n", task)
 	fmt.Println("========================================")
 
+	emitEvent(broker, iterationEvent{
+		Type:      "task_info",
+		Timestamp: time.Now().Format(time.RFC3339),
+		MaxIter:   maxIterations,
+		Task:      task,
+		Model:     model,
+	})
+
+	// Save memory on exit (deferred early so it runs on all exit paths).
+	defer func() {
+		if len(memories) > 0 {
+			if err := saveMemory(workDir, memories); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to save memory: %v\n", err)
+			} else {
+				fmt.Printf("Saved %d memory facts to %s\n", len(memories), memoryFileName)
+			}
+		}
+	}()
+
 	messages := []openRouterMessage{
-		{Role: "system", Content: buildSystemPrompt()},
+		{Role: "system", Content: buildSystemPrompt(memories)},
 		{Role: "user", Content: fmt.Sprintf("Task: %s\n\nYou are now connected to the Claude Code CLI. Send your first message to begin working on the task.", task)},
 	}
 
@@ -820,10 +1164,33 @@ func autonomousLoop(session, workDir, command, apiKey, model, task string) {
 	consecutiveAPIErrors := 0
 
 	for i := 1; maxIterations == 0 || i <= maxIterations; i++ {
+		iterStart := time.Now()
+
 		if maxIterations > 0 {
 			fmt.Printf("\n┌─── Iteration %d/%d ───────────────────────\n", i, maxIterations)
 		} else {
 			fmt.Printf("\n┌─── Iteration %d ─────────────────────────\n", i)
+		}
+
+		emitEvent(broker, iterationEvent{
+			Type:      "iteration_start",
+			Iteration: i,
+			MaxIter:   maxIterations,
+			Timestamp: iterStart.Format(time.RFC3339),
+		})
+
+		// Compact memory if it exceeds the threshold.
+		if len(memories) > maxFacts {
+			fmt.Printf("│ Memory has %d facts (threshold %d), compacting...\n", len(memories), maxFacts)
+			compacted, compactErr := compactMemory(apiKey, model, memories)
+			if compactErr != nil {
+				fmt.Fprintf(os.Stderr, "│ Memory compaction failed (non-fatal): %v\n", compactErr)
+			} else {
+				fmt.Printf("│ Compacted memory: %d → %d facts\n", len(memories), len(compacted))
+				memories = compacted
+				// Rebuild system prompt with compacted memories.
+				messages[0] = openRouterMessage{Role: "system", Content: buildSystemPrompt(memories)}
+			}
 		}
 
 		// Call the orchestrator LLM.
@@ -831,8 +1198,20 @@ func autonomousLoop(session, workDir, command, apiKey, model, task string) {
 		if err != nil {
 			consecutiveAPIErrors++
 			fmt.Fprintf(os.Stderr, "│ API ERROR (%d/3): %v\n", consecutiveAPIErrors, err)
+			emitEvent(broker, iterationEvent{
+				Type:      "error",
+				Iteration: i,
+				Timestamp: time.Now().Format(time.RFC3339),
+				Error:     fmt.Sprintf("API error (%d/3): %v", consecutiveAPIErrors, err),
+			})
 			if consecutiveAPIErrors >= 3 {
 				fmt.Fprintln(os.Stderr, "│ Too many consecutive API errors, aborting.")
+				emitEvent(broker, iterationEvent{
+					Type:      "complete",
+					Iteration: i,
+					Timestamp: time.Now().Format(time.RFC3339),
+					Error:     "aborted after 3 consecutive API errors",
+				})
 				return
 			}
 			fmt.Fprintln(os.Stderr, "│ Retrying in 5s...")
@@ -854,12 +1233,40 @@ func autonomousLoop(session, workDir, command, apiKey, model, task string) {
 		}
 		fmt.Println("│ ╚════════════════════════════════════════")
 
+		// Extract memory saves from the reply.
+		newFacts, cleanedReply := extractMemorySaves(reply)
+		if len(newFacts) > 0 {
+			memories = append(memories, newFacts...)
+			memories = deduplicateMemory(memories)
+			fmt.Printf("│ Saved %d new memory fact(s) (total: %d)\n", len(newFacts), len(memories))
+			reply = cleanedReply
+		}
+
 		// Check for task completion.
 		if strings.Contains(reply, taskCompleteMarker) {
 			fmt.Println("│")
 			fmt.Println("│ *** TASK COMPLETE ***")
 			fmt.Printf("└─── Finished after %d iterations ────────\n", i)
 			messages = append(messages, openRouterMessage{Role: "assistant", Content: reply})
+			emitEvent(broker, iterationEvent{
+				Type:       "iteration_end",
+				Iteration:  i,
+				MaxIter:    maxIterations,
+				Timestamp:  time.Now().Format(time.RFC3339),
+				DurationMs: time.Since(iterStart).Milliseconds(),
+				Tokens: &tokenUsage{
+					Prompt:     usage.PromptTokens,
+					Completion: usage.CompletionTokens,
+					Total:      usage.TotalTokens,
+				},
+				Orchestrator: reply,
+			})
+			emitEvent(broker, iterationEvent{
+				Type:      "complete",
+				Iteration: i,
+				Timestamp: time.Now().Format(time.RFC3339),
+				Task:      task,
+			})
 			return
 		}
 
@@ -876,6 +1283,20 @@ func autonomousLoop(session, workDir, command, apiKey, model, task string) {
 		if err != nil {
 			errMsg := fmt.Sprintf("Error sending to Claude Code: %v", err)
 			fmt.Fprintf(os.Stderr, "│ TMUX ERROR: %v\n", err)
+			emitEvent(broker, iterationEvent{
+				Type:       "iteration_end",
+				Iteration:  i,
+				MaxIter:    maxIterations,
+				Timestamp:  time.Now().Format(time.RFC3339),
+				DurationMs: time.Since(iterStart).Milliseconds(),
+				Tokens: &tokenUsage{
+					Prompt:     usage.PromptTokens,
+					Completion: usage.CompletionTokens,
+					Total:      usage.TotalTokens,
+				},
+				Orchestrator: reply,
+				Error:        fmt.Sprintf("tmux error: %v", err),
+			})
 			// Feed the error back so the LLM can adapt.
 			messages = append(messages,
 				openRouterMessage{Role: "assistant", Content: reply},
@@ -895,6 +1316,21 @@ func autonomousLoop(session, workDir, command, apiKey, model, task string) {
 		fmt.Println("│ ╚════════════════════════════════════════")
 		fmt.Printf("└─────────────────────────────────────────\n")
 
+		emitEvent(broker, iterationEvent{
+			Type:       "iteration_end",
+			Iteration:  i,
+			MaxIter:    maxIterations,
+			Timestamp:  time.Now().Format(time.RFC3339),
+			DurationMs: time.Since(iterStart).Milliseconds(),
+			Tokens: &tokenUsage{
+				Prompt:     usage.PromptTokens,
+				Completion: usage.CompletionTokens,
+				Total:      usage.TotalTokens,
+			},
+			Orchestrator: reply,
+			ClaudeOutput: cleaned,
+		})
+
 		// Append to conversation history.
 		messages = append(messages,
 			openRouterMessage{Role: "assistant", Content: reply},
@@ -904,4 +1340,10 @@ func autonomousLoop(session, workDir, command, apiKey, model, task string) {
 	}
 
 	fmt.Fprintf(os.Stderr, "\nReached maximum iterations (%d) without task completion.\n", maxIterations)
+	emitEvent(broker, iterationEvent{
+		Type:      "complete",
+		Iteration: maxIterations,
+		Timestamp: time.Now().Format(time.RFC3339),
+		Error:     fmt.Sprintf("reached maximum iterations (%d) without task completion", maxIterations),
+	})
 }

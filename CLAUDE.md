@@ -8,9 +8,13 @@ A Go CLI that orchestrates Claude Code sessions via tmux. It supports two modes:
 
 ## Project Structure
 
-- `main.go` — Entire application in a single file (entry point, tmux management, chat loop, autonomous loop, OpenRouter client, recovery logic)
+- `main.go` — Entire application in a single file (entry point, tmux management, chat loop, autonomous loop, OpenRouter client, recovery logic, dashboard server)
 - `main_test.go` — Unit tests (no tmux required)
 - `main_integration_test.go` — Integration tests (requires tmux, uses `//go:build integration` tag)
+- `web/` — Embedded web dashboard assets (compiled into the binary via `//go:embed`)
+  - `web/index.html` — Dashboard HTML structure
+  - `web/style.css` — Dark theme styling
+  - `web/app.js` — SSE client and live DOM updates
 - `go.mod` — Go 1.23, module `github.com/dlee6018/agent-orchestrator`, no external dependencies
 - `.env` — Runtime env vars (contains `TERMINATE_WHEN_QUIT=true`)
 
@@ -33,12 +37,15 @@ All code lives in `main.go` in a single `package main`. There are no subdirector
 - `restartClaudeSession` — Kill + recreate session from scratch
 - `resolveStartupCommand` — Validates command, resolves binary to absolute path via `LookPath`
 - `shouldRecoverSession` — Checks error strings to decide if session restart is warranted
-- `autonomousLoop` — Agent loop: LLM decides → send to Claude Code → capture output → feed back to LLM → repeat
+- `autonomousLoop` — Agent loop: LLM decides → send to Claude Code → capture output → feed back to LLM → repeat; emits SSE events to the dashboard
 - `callOpenRouter` — Sends chat completion request to OpenRouter API, returns reply and token usage
 - `cleanPaneOutput` — Strips ANSI escapes, collapses blank lines, trims whitespace from pane captures
 - `buildSystemPrompt` — Returns the system prompt that instructs the orchestrator LLM
 - `truncateForLog` — Truncates long strings for console logging
 - `runWithCleanup` — Wraps a function with optional signal handling and session cleanup
+- `sseBroker` — Fan-out SSE event broadcaster (subscribe/publish/unsubscribe)
+- `startDashboard` — Starts the embedded HTTP server for the web dashboard
+- `emitEvent` — Nil-safe helper that publishes an event to the SSE broker
 
 ### Tmux Isolation
 All tmux commands go through `runTmux()` / `tmuxArgs()` which prepend `-L <socket>` to isolate from the user's real tmux. The socket name defaults to `gt-claude-loop`.
@@ -55,6 +62,9 @@ All tmux commands go through `runTmux()` / `tmuxArgs()` which prepend `-L <socke
 | `OPENROUTER_API_KEY` | (required in autonomous mode) | OpenRouter API key |
 | `OPENROUTER_MODEL` | `anthropic/claude-opus-4.6` | Model for the orchestrator LLM |
 | `MAX_ITERATIONS` | `0` (unlimited) | Safety cap on agent loop iterations |
+| `DASHBOARD_ENABLED` | `true` | Enable/disable the web dashboard |
+| `DASHBOARD_PORT` | `0` (auto) | Port for the dashboard (0 = OS picks a free port) |
+| `DASHBOARD_OPEN` | `true` | Auto-open browser when dashboard starts |
 
 ## Build & Run
 

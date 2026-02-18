@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orchestrator Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Orchestrator Dashboard</h1>
+        <div id="connection-status" class="status-badge disconnected">Disconnected</div>
+    </header>
+    <main>
+        <section id="task-info" class="card hidden">
+            <h2>Task</h2>
+            <p id="task-description"></p>
+            <div class="meta-row">
+                <span class="meta-label">Model:</span>
+                <span id="task-model"></span>
+                <span class="meta-label">Max Iterations:</span>
+                <span id="task-max-iter"></span>
+            </div>
+        </section>
+
+        <section id="summary" class="card hidden">
+            <h2>Progress</h2>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <span class="summary-value" id="total-iterations">0</span>
+                    <span class="summary-label">Iterations</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-value" id="total-tokens">0</span>
+                    <span class="summary-label">Total Tokens</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-value" id="total-duration">0s</span>
+                    <span class="summary-label">Total Time</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-value" id="total-errors">0</span>
+                    <span class="summary-label">Errors</span>
+                </div>
+            </div>
+            <div id="progress-bar-container" class="hidden">
+                <div id="progress-bar"></div>
+                <span id="progress-text"></span>
+            </div>
+        </section>
+
+        <section id="completion-banner" class="card hidden">
+            <h2 id="completion-title">Task Complete</h2>
+            <p id="completion-message"></p>
+        </section>
+
+        <div id="iterations"></div>
+
+        <div id="spinner" class="hidden">
+            <div class="spinner-dot"></div>
+            <span>Waiting for next iteration...</span>
+        </div>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>

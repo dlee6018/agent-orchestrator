@@ -393,7 +393,7 @@ func TestIntegration_AutonomousLoop_CompletesTask(t *testing.T) {
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "echo a marker")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "echo a marker", nil)
 
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 API calls, got %d", callCount)
@@ -422,7 +422,7 @@ func TestIntegration_AutonomousLoop_MaxIterations(t *testing.T) {
 	setupAutonomous(t, srv.URL, 3)
 	createTestSession(t, session, workDir, command)
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "never-ending task")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "never-ending task", nil)
 
 	if callCount != 3 {
 		t.Fatalf("expected exactly 3 API calls (maxIterations=3), got %d", callCount)
@@ -455,7 +455,7 @@ func TestIntegration_AutonomousLoop_FeedbackLoop(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "echo test")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "echo test", nil)
 
 	if len(secondCallMessages) == 0 {
 		t.Fatal("second call messages not captured")
@@ -504,7 +504,7 @@ func TestIntegration_AutonomousLoop_ConversationHistoryStructure(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "run two commands")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "run two commands", nil)
 
 	if len(allCapturedMessages) < 3 {
 		t.Fatalf("expected at least 3 API calls, got %d", len(allCapturedMessages))
@@ -593,7 +593,7 @@ func TestIntegration_AutonomousLoop_TaskCompleteEmbedded(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "embedded completion test")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "embedded completion test", nil)
 
 	// Should have completed after 2 iterations (not run to maxIterations).
 	if callCount != 2 {
@@ -630,7 +630,7 @@ func TestIntegration_AutonomousLoop_APIErrorAbort(t *testing.T) {
 	createTestSession(t, session, workDir, command)
 
 	start := time.Now()
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "doomed task")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "doomed task", nil)
 	elapsed := time.Since(start)
 
 	calls := int(atomic.LoadInt32(&apiCalls))
@@ -673,7 +673,7 @@ func TestIntegration_AutonomousLoop_APIErrorRecovery(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "transient error task")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "transient error task", nil)
 
 	calls := int(atomic.LoadInt32(&apiCalls))
 	if calls != 3 {
@@ -724,7 +724,7 @@ func TestIntegration_AutonomousLoop_MultiStepTask(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "create and verify file")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "create and verify file", nil)
 
 	if callCount != 3 {
 		t.Fatalf("expected 3 API calls for multi-step task, got %d", callCount)
@@ -789,7 +789,7 @@ func TestIntegration_AutonomousLoop_TmuxRecoveryMidLoop(t *testing.T) {
 		_ = runTmux("kill-session", "-t", session)
 	}()
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "survive tmux kill")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "survive tmux kill", nil)
 
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 API calls, got %d", callCount)
@@ -852,7 +852,7 @@ func TestIntegration_AutonomousLoop_APIKeyAndModel(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	autonomousLoop(session, workDir, command, "sk-test-key-123", "anthropic/claude-sonnet-4", "api key test")
+	autonomousLoop(session, workDir, command, "sk-test-key-123", "anthropic/claude-sonnet-4", "api key test", nil)
 
 	if receivedAuth != "Bearer sk-test-key-123" {
 		t.Fatalf("expected auth header %q, got %q", "Bearer sk-test-key-123", receivedAuth)
@@ -881,7 +881,7 @@ func TestIntegration_AutonomousLoop_ImmediateComplete(t *testing.T) {
 		t.Fatalf("initial capture: %v", err)
 	}
 
-	autonomousLoop(session, workDir, command, "test-key", "test-model", "instant done")
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "instant done", nil)
 
 	if callCount != 1 {
 		t.Fatalf("expected exactly 1 API call, got %d", callCount)
@@ -894,5 +894,209 @@ func TestIntegration_AutonomousLoop_ImmediateComplete(t *testing.T) {
 	}
 	if initial != after {
 		t.Fatal("pane should not have changed when LLM immediately returned TASK_COMPLETE")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard SSE integration tests
+// ---------------------------------------------------------------------------
+
+// The autonomous loop emits the expected SSE events (task_info, iteration_start,
+// iteration_end, complete) when given a broker.
+func TestIntegration_AutonomousLoop_EmitsSSEEvents(t *testing.T) {
+	session, workDir, command := setupIntegration(t)
+
+	marker := fmt.Sprintf("SSE_%d", time.Now().UnixNano())
+	callCount := 0
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			respondJSON(w, fmt.Sprintf("echo %s", marker), callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 5)
+	createTestSession(t, session, workDir, command)
+
+	broker := newSSEBroker()
+	ch, unsub := broker.subscribe()
+	defer unsub()
+
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "emit SSE events", broker)
+
+	// Drain all events from the channel.
+	var events []iterationEvent
+	for {
+		select {
+		case msg := <-ch:
+			// Parse SSE data line: "data: {...}\n\n"
+			payload := strings.TrimPrefix(strings.TrimSpace(msg), "data: ")
+			var evt iterationEvent
+			if err := json.Unmarshal([]byte(payload), &evt); err == nil {
+				events = append(events, evt)
+			}
+		default:
+			goto collected
+		}
+	}
+collected:
+
+	// Verify we got the expected event types in order.
+	if len(events) < 4 {
+		t.Fatalf("expected at least 4 SSE events, got %d", len(events))
+	}
+
+	// First event should be task_info.
+	if events[0].Type != "task_info" {
+		t.Fatalf("event 0: expected task_info, got %q", events[0].Type)
+	}
+	if events[0].Task != "emit SSE events" {
+		t.Fatalf("task_info: expected task %q, got %q", "emit SSE events", events[0].Task)
+	}
+	if events[0].Model != "test-model" {
+		t.Fatalf("task_info: expected model %q, got %q", "test-model", events[0].Model)
+	}
+
+	// Check that we have iteration_start and iteration_end events.
+	typeSet := make(map[string]bool)
+	for _, evt := range events {
+		typeSet[evt.Type] = true
+	}
+	for _, want := range []string{"task_info", "iteration_start", "iteration_end", "complete"} {
+		if !typeSet[want] {
+			t.Fatalf("missing event type %q; got types: %v", want, typeSet)
+		}
+	}
+
+	// The last event should be "complete" with no error (successful task).
+	last := events[len(events)-1]
+	if last.Type != "complete" {
+		t.Fatalf("last event: expected complete, got %q", last.Type)
+	}
+	if last.Error != "" {
+		t.Fatalf("last event: unexpected error: %s", last.Error)
+	}
+
+	// Verify iteration_end events have token data.
+	for _, evt := range events {
+		if evt.Type == "iteration_end" && evt.Tokens == nil {
+			t.Fatalf("iteration_end event %d missing tokens", evt.Iteration)
+		}
+	}
+}
+
+// SSE events include the orchestrator message and Claude Code output.
+func TestIntegration_AutonomousLoop_SSEEventContent(t *testing.T) {
+	session, workDir, command := setupIntegration(t)
+
+	marker := fmt.Sprintf("SSECONTENT_%d", time.Now().UnixNano())
+	callCount := 0
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			respondJSON(w, fmt.Sprintf("echo %s", marker), callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 5)
+	createTestSession(t, session, workDir, command)
+
+	broker := newSSEBroker()
+	ch, unsub := broker.subscribe()
+	defer unsub()
+
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "content test", broker)
+
+	// Drain events and find the first iteration_end with Claude output.
+	var iterEndEvents []iterationEvent
+	for {
+		select {
+		case msg := <-ch:
+			payload := strings.TrimPrefix(strings.TrimSpace(msg), "data: ")
+			var evt iterationEvent
+			if err := json.Unmarshal([]byte(payload), &evt); err == nil {
+				if evt.Type == "iteration_end" {
+					iterEndEvents = append(iterEndEvents, evt)
+				}
+			}
+		default:
+			goto done
+		}
+	}
+done:
+
+	if len(iterEndEvents) == 0 {
+		t.Fatal("no iteration_end events received")
+	}
+
+	// The first iteration_end should contain the echo command as orchestrator message.
+	first := iterEndEvents[0]
+	if !strings.Contains(first.Orchestrator, marker) {
+		t.Fatalf("iteration_end orchestrator message missing marker %q: %q", marker, first.Orchestrator)
+	}
+	// Claude Code should have echoed the marker back.
+	if !strings.Contains(first.ClaudeOutput, marker) {
+		t.Fatalf("iteration_end claude_output missing marker %q: %q", marker, first.ClaudeOutput)
+	}
+	// Duration should be positive.
+	if first.DurationMs <= 0 {
+		t.Fatalf("iteration_end duration_ms should be positive, got %d", first.DurationMs)
+	}
+}
+
+// Max iterations reached emits a complete event with an error message.
+func TestIntegration_AutonomousLoop_SSEMaxIterations(t *testing.T) {
+	session, workDir, command := setupIntegration(t)
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		respondJSON(w, "echo looping", 1)
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 2)
+	createTestSession(t, session, workDir, command)
+
+	broker := newSSEBroker()
+	ch, unsub := broker.subscribe()
+	defer unsub()
+
+	autonomousLoop(session, workDir, command, "test-key", "test-model", "max iter test", broker)
+
+	// Drain and find the complete event.
+	var completeEvent *iterationEvent
+	for {
+		select {
+		case msg := <-ch:
+			payload := strings.TrimPrefix(strings.TrimSpace(msg), "data: ")
+			var evt iterationEvent
+			if err := json.Unmarshal([]byte(payload), &evt); err == nil {
+				if evt.Type == "complete" {
+					completeEvent = &evt
+				}
+			}
+		default:
+			goto found
+		}
+	}
+found:
+
+	if completeEvent == nil {
+		t.Fatal("no complete event received")
+	}
+	if completeEvent.Error == "" {
+		t.Fatal("complete event should have an error for max iterations")
+	}
+	if !strings.Contains(completeEvent.Error, "maximum iterations") {
+		t.Fatalf("complete event error should mention max iterations: %q", completeEvent.Error)
 	}
 }

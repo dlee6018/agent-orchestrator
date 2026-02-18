@@ -15,8 +15,10 @@ A Go CLI that orchestrates Claude Code sessions via tmux. It supports two modes:
   - `web/index.html` — Dashboard HTML structure
   - `web/style.css` — Dark theme styling
   - `web/app.js` — SSE client and live DOM updates
+  - `web/app.test.js` — JavaScript tests for the dashboard client
 - `go.mod` — Go 1.23, module `github.com/dlee6018/agent-orchestrator`, no external dependencies
 - `.env` — Runtime env vars (contains `TERMINATE_WHEN_QUIT=true`)
+- `README.md` — Project readme
 
 ## Key Architecture
 
@@ -47,9 +49,21 @@ All code lives in `main.go` in a single `package main`. There are no subdirector
 - `compactMemory` — Asks the LLM to consolidate facts when they exceed the threshold
 - `truncateForLog` — Truncates long strings for console logging
 - `runWithCleanup` — Wraps a function with optional signal handling and session cleanup
+- `loadEnvFile` — Parses `.env` file and sets environment variables at startup
 - `sseBroker` — Fan-out SSE event broadcaster (subscribe/publish/unsubscribe)
 - `startDashboard` — Starts the embedded HTTP server for the web dashboard
+- `openBrowser` — Opens the dashboard URL in the default browser
 - `emitEvent` — Nil-safe helper that publishes an event to the SSE broker
+
+### Dashboard Event Types
+The autonomous loop emits structured SSE events consumed by the web dashboard:
+- `task_info` — Initial task metadata (replayed to late-joining clients)
+- `iteration_start` — Fired when an iteration begins
+- `iteration_end` — Fired when an iteration completes, includes duration and token usage
+- `error` — Fired on iteration errors (e.g. API failures)
+- `complete` — Fired when the task finishes or is aborted
+
+Events carry an `iterationEvent` payload with fields: iteration number, timestamp, duration, token usage (`tokenUsage` struct with prompt/completion/total), orchestrator message, Claude output, and error info.
 
 ### Tmux Isolation
 All tmux commands go through `runTmux()` / `tmuxArgs()` which prepend `-L <socket>` to isolate from the user's real tmux. The socket name defaults to `gt-claude-loop`.
@@ -104,5 +118,5 @@ Integration tests create isolated tmux servers via unique sockets and clean them
 - No external dependencies — stdlib only
 - Error messages include the function name as prefix (e.g., `"createSession: new-session: ..."`)
 - Input validation uses allowlists (e.g., `validateSessionName` permits only `[a-zA-Z0-9_-]`)
-- Package-level vars (`pollInterval`, `stableWindow`, `startupSettleWindow`, `tmuxSocket`, `openRouterEndpoint`, `maxIterations`) are overridden in tests via helpers like `overrideTimers` and `setupIntegration`
+- Package-level vars (`pollInterval`, `stableWindow`, `startupSettleWindow`, `tmuxSocket`, `openRouterEndpoint`, `maxIterations`, `maxFacts`, `keystrokeSleep`) are overridden in tests via helpers like `overrideTimers` and `setupIntegration`
 - The autonomous loop completion signal is the literal string `TASK_COMPLETE` checked via `strings.Contains`

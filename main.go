@@ -20,7 +20,6 @@ import (
 const (
 	defaultSession = "gt-claude-loop"
 	defaultSocket  = "gt-claude-loop"
-	defaultCommand = "claude --dangerously-skip-permissions --setting-sources user"
 )
 
 // main resolves config from env vars, sets up the tmux session, and enters the appropriate loop.
@@ -39,7 +38,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid socket name: %v\n", err)
 		os.Exit(1)
 	}
-	command, err := tmux.ResolveStartupCommand(helpers.EnvOrDefault("CLAUDE_CMD", defaultCommand))
+	defaultModel := helpers.EnvOrDefault("DEFAULT_MODEL", "claude")
+	agentCommand, agentName := helpers.ResolveAgentConfig(defaultModel)
+	command, err := tmux.ResolveStartupCommand(helpers.EnvOrDefault("CLAUDE_CMD", agentCommand))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid startup command: %v\n", err)
 		os.Exit(1)
@@ -136,7 +137,7 @@ func main() {
 		}
 
 		runWithCleanup(session, terminateOnQuit, func() {
-			orchestrator.AutonomousLoop(session, workDir, command, apiKey, model, task, broker, memories)
+			orchestrator.AutonomousLoop(session, workDir, command, apiKey, model, task, agentName, broker, memories)
 		})
 	} else {
 		fmt.Printf("Session %q is ready. Type messages and press Enter. Use /quit to exit.\n", session)

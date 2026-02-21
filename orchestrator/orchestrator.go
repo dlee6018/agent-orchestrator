@@ -14,13 +14,14 @@ import (
 // MaxIterations is the safety cap on agent loop iterations (0 means unlimited).
 var MaxIterations = 0
 
-// AutonomousLoop drives Claude Code via an LLM agent loop.
-// It sends the task to the LLM, relays its decisions to Claude Code,
+// AutonomousLoop drives an agent CLI via an LLM agent loop.
+// It sends the task to the LLM, relays its decisions to the agent,
 // and feeds back the pane output until the LLM signals TASK_COMPLETE.
 // If MaxIterations > 0 the loop stops after that many iterations.
+// agentName is the display name of the inner coding agent (e.g. "Claude Code", "Codex").
 // memories carries persistent facts from previous sessions; new facts
 // are extracted from MEMORY_SAVE: lines and saved on exit.
-func AutonomousLoop(session, workDir, command, apiKey, model, task string, broker *dashboard.SSEBroker, memories []string) {
+func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName string, broker *dashboard.SSEBroker, memories []string) {
 	fmt.Println("========================================")
 	fmt.Println("AUTONOMOUS MODE")
 	fmt.Printf("Model: %s\n", model)
@@ -52,8 +53,8 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task string, broke
 	}()
 
 	messages := []Message{
-		{Role: "system", Content: BuildSystemPrompt(memories)},
-		{Role: "user", Content: fmt.Sprintf("Task: %s\n\nYou are now connected to the Claude Code CLI. Send your first message to begin working on the task.", task)},
+		{Role: "system", Content: BuildSystemPrompt(agentName, memories)},
+		{Role: "user", Content: fmt.Sprintf("Task: %s\n\nYou are now connected to the %s CLI. Send your first message to begin working on the task.", task, agentName)},
 	}
 
 	lastPane := ""
@@ -90,7 +91,7 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task string, broke
 				fmt.Printf("│ Compacted memory: %d → %d facts\n", len(memories), len(compacted))
 				memories = compacted
 				// Rebuild system prompt with compacted memories.
-				messages[0] = Message{Role: "system", Content: BuildSystemPrompt(memories)}
+				messages[0] = Message{Role: "system", Content: BuildSystemPrompt(agentName, memories)}
 			}
 		}
 
@@ -128,7 +129,7 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task string, broke
 
 		// Log the LLM's decision.
 		fmt.Println("│")
-		fmt.Println("│ ╔══ ORCHESTRATOR → CLAUDE CODE ══════════")
+		fmt.Printf("│ ╔══ ORCHESTRATOR → %s ══════════\n", strings.ToUpper(agentName))
 		for _, line := range strings.Split(reply, "\n") {
 			fmt.Printf("│ ║ %s\n", line)
 		}
@@ -174,15 +175,15 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task string, broke
 		// Send the LLM's reply to Claude Code.
 		pane, err := tmux.SendAndCaptureWithRecovery(session, workDir, command, reply, lastPane)
 
-		// If Claude Code is still working, keep polling instead of calling the LLM.
-		for err != nil && strings.Contains(err.Error(), "claude code is still working") {
-			fmt.Println("│ Claude Code is still working, waiting for output...")
+		// If the agent is still working, keep polling instead of calling the LLM.
+		for err != nil && strings.Contains(err.Error(), "agent is still working") {
+			fmt.Printf("│ %s is still working, waiting for output...\n", agentName)
 			lastPane = pane
 			pane, err = tmux.WaitForPaneUpdate(session, lastPane, 90*time.Second)
 		}
 
 		if err != nil {
-			errMsg := fmt.Sprintf("Error sending to Claude Code: %v", err)
+			errMsg := fmt.Sprintf("Error sending to %s: %v", agentName, err)
 			fmt.Fprintf(os.Stderr, "│ TMUX ERROR: %v\n", err)
 			broker.Publish(dashboard.IterationEvent{
 				Type:       "iteration_end",
@@ -208,9 +209,9 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task string, broke
 
 		cleaned := tmux.CleanPaneOutput(pane)
 
-		// Log Claude Code's response.
+		// Log the agent's response.
 		fmt.Println("│")
-		fmt.Println("│ ╔══ CLAUDE CODE OUTPUT ══════════════════")
+		fmt.Printf("│ ╔══ %s OUTPUT ══════════════════\n", strings.ToUpper(agentName))
 		for _, line := range strings.Split(cleaned, "\n") {
 			fmt.Printf("│ ║ %s\n", line)
 		}
@@ -230,12 +231,13 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task string, broke
 			},
 			Orchestrator: reply,
 			ClaudeOutput: cleaned,
+			AgentOutput:  cleaned,
 		})
 
 		// Append to conversation history.
 		messages = append(messages,
 			Message{Role: "assistant", Content: reply},
-			Message{Role: "user", Content: fmt.Sprintf("Claude Code output:\n%s", cleaned)},
+			Message{Role: "user", Content: fmt.Sprintf("%s output:\n%s", agentName, cleaned)},
 		)
 		lastPane = pane
 	}

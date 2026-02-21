@@ -186,3 +186,58 @@ func TestValidateSessionName_Invalid(t *testing.T) {
 		}
 	}
 }
+
+// ResolveAgentConfig returns Claude Code command and display name for claude models.
+func TestResolveAgentConfig_ClaudeModel(t *testing.T) {
+	cmd, name := ResolveAgentConfig("claude-opus-4")
+	if cmd != "claude --dangerously-skip-permissions --setting-sources user" {
+		t.Fatalf("command: got %q, want claude command", cmd)
+	}
+	if name != "Claude Code" {
+		t.Fatalf("name: got %q, want %q", name, "Claude Code")
+	}
+}
+
+// ResolveAgentConfig returns codex command and display name for gpt models.
+func TestResolveAgentConfig_GPTModel(t *testing.T) {
+	cmd, name := ResolveAgentConfig("gpt-4o")
+	if cmd != "codex --approval-mode full-auto" {
+		t.Fatalf("command: got %q, want %q", cmd, "codex --approval-mode full-auto")
+	}
+	if name != "Codex" {
+		t.Fatalf("name: got %q, want %q", name, "Codex")
+	}
+}
+
+// ResolveAgentConfig defaults to Claude Code for empty string.
+func TestResolveAgentConfig_Empty(t *testing.T) {
+	cmd, name := ResolveAgentConfig("")
+	if cmd != "claude --dangerously-skip-permissions --setting-sources user" {
+		t.Fatalf("command: got %q, want claude command", cmd)
+	}
+	if name != "Claude Code" {
+		t.Fatalf("name: got %q, want %q", name, "Claude Code")
+	}
+}
+
+// ResolveAgentConfig defaults to Claude Code for unknown model prefix.
+func TestResolveAgentConfig_UnknownPrefix(t *testing.T) {
+	cmd, name := ResolveAgentConfig("llama-3.1-70b")
+	if cmd != "claude --dangerously-skip-permissions --setting-sources user" {
+		t.Fatalf("command: got %q, want claude command", cmd)
+	}
+	if name != "Claude Code" {
+		t.Fatalf("name: got %q, want %q", name, "Claude Code")
+	}
+}
+
+// ResolveAgentConfig handles case-insensitive model prefix matching.
+func TestResolveAgentConfig_CaseInsensitive(t *testing.T) {
+	cmd, name := ResolveAgentConfig("GPT-4o")
+	if cmd != "codex --approval-mode full-auto" {
+		t.Fatalf("command: got %q, want %q", cmd, "codex --approval-mode full-auto")
+	}
+	if name != "Codex" {
+		t.Fatalf("name: got %q, want %q", name, "Codex")
+	}
+}

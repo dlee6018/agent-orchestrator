@@ -147,8 +147,8 @@ func TestWaitForPaneUpdateWithCapture_TimeoutNoChanges(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if !strings.Contains(err.Error(), "still working") {
-		t.Fatalf("expected 'still working' error, got: %v", err)
+	if !strings.Contains(err.Error(), "agent is still working") {
+		t.Fatalf("expected 'agent is still working' error, got: %v", err)
 	}
 	if got != "same" {
 		t.Fatalf("got %q, want same", got)
@@ -184,8 +184,8 @@ func TestWaitForPaneUpdateWithCapture_TimeoutProcessDead(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if !strings.Contains(err.Error(), "process is dead") {
-		t.Fatalf("expected 'process is dead' error, got: %v", err)
+	if !strings.Contains(err.Error(), "agent process is dead") {
+		t.Fatalf("expected 'agent process is dead' error, got: %v", err)
 	}
 	if got != "same" {
 		t.Fatalf("got %q, want same", got)

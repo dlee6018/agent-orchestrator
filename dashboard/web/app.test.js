@@ -477,6 +477,63 @@ describe("Dashboard app.js", () => {
         });
     });
 
+    describe("agent_output field", () => {
+        it("uses agent_output when present, with fallback to claude_output", () => {
+            sendEvent(handleEvent, { type: "task_info", task: "t", model: "m", max_iter: 0 });
+
+            // When agent_output is present, it should be used.
+            sendEvent(handleEvent, {
+                type: "iteration_end",
+                iteration: 1,
+                tokens: { prompt: 10, completion: 5, total: 15 },
+                orchestrator: "echo hello",
+                agent_output: "agent says hello",
+                claude_output: "claude says hello",
+            });
+
+            const container = elements["iterations"];
+            const card = container.children[0];
+            // Find the output section — look for "Agent Output" heading.
+            let foundAgentOutput = false;
+            for (const child of card.children) {
+                for (const section of (child.children || [])) {
+                    for (const el of (section.children || [])) {
+                        if (el.textContent === "agent says hello") {
+                            foundAgentOutput = true;
+                        }
+                    }
+                }
+            }
+            assert.ok(foundAgentOutput, "should display agent_output content");
+        });
+
+        it("falls back to claude_output when agent_output is absent", () => {
+            sendEvent(handleEvent, { type: "task_info", task: "t", model: "m", max_iter: 0 });
+
+            sendEvent(handleEvent, {
+                type: "iteration_end",
+                iteration: 1,
+                tokens: { prompt: 10, completion: 5, total: 15 },
+                orchestrator: "echo hello",
+                claude_output: "claude says hello",
+            });
+
+            const container = elements["iterations"];
+            const card = container.children[0];
+            let foundClaudeOutput = false;
+            for (const child of card.children) {
+                for (const section of (child.children || [])) {
+                    for (const el of (section.children || [])) {
+                        if (el.textContent === "claude says hello") {
+                            foundClaudeOutput = true;
+                        }
+                    }
+                }
+            }
+            assert.ok(foundClaudeOutput, "should fall back to claude_output when agent_output is absent");
+        });
+    });
+
     describe("malformed events", () => {
         it("ignores invalid JSON without throwing", () => {
             handleEvent({ data: "not valid json{{{" });

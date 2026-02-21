@@ -187,9 +187,9 @@ func WaitForPaneUpdateWithCapture(previous string, timeout time.Duration, captur
 			return last, fmt.Errorf("WaitForPaneUpdateWithCapture: liveness check failed: %w", aliveErr)
 		}
 		if !alive {
-			return last, fmt.Errorf("WaitForPaneUpdateWithCapture: claude code process is dead, no pane changes within %s", timeout)
+			return last, fmt.Errorf("WaitForPaneUpdateWithCapture: agent process is dead, no pane changes within %s", timeout)
 		}
-		return last, fmt.Errorf("WaitForPaneUpdateWithCapture: claude code is still working, no pane changes within %s", timeout)
+		return last, fmt.Errorf("WaitForPaneUpdateWithCapture: agent is still working, no pane changes within %s", timeout)
 	}
 	return last, fmt.Errorf("WaitForPaneUpdateWithCapture: timeout (%s) reached, content changed but did not stabilize", timeout)
 }

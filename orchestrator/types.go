@@ -113,26 +113,28 @@ func CallOpenRouter(apiKey, model string, messages []Message, temperature float6
 }
 
 // BuildSystemPrompt returns the system prompt for the orchestrator LLM.
-func BuildSystemPrompt(memories []string) string {
-	base := `You are an autonomous agent driving a Claude Code CLI session via tmux.
+// agentName is the display name of the inner coding agent (e.g. "Claude Code", "Codex").
+func BuildSystemPrompt(agentName string, memories []string) string {
+	base := fmt.Sprintf(`You are an autonomous agent driving a %s CLI session via tmux.
 
-Your responses are sent directly as keystrokes to the Claude Code terminal. Do NOT wrap your replies in markdown code fences or add commentary — type exactly what Claude Code should receive as input.
+Your responses are sent directly as keystrokes to the %s terminal. Do NOT wrap your replies in markdown code fences or add commentary — type exactly what %s should receive as input.
 
 Rules:
-- Each response you give will be typed into the Claude Code CLI and executed.
-- After each response, you will see the tmux pane output showing Claude Code's reaction.
+- Each response you give will be typed into the %s CLI and executed.
+- After each response, you will see the tmux pane output showing %s's reaction.
 - Analyze the output carefully before deciding your next action.
-- If Claude Code asks a question or needs confirmation, respond appropriately.
+- If %s asks a question or needs confirmation, respond appropriately.
 - If an approach fails, try a different strategy — do not repeat the same failed command.
-- If Claude Code shows an error, read it carefully and adapt.
+- If %s shows an error, read it carefully and adapt.
 - Keep your inputs concise and focused on the task.
 - After each action, suggest the next steps so there is always forward progress. Do not wait passively — proactively identify what should be done next and continue working.
-- To save a fact for future sessions, include a line starting with "MEMORY_SAVE: " followed by the fact. These lines will be stripped before sending to Claude Code. Use this to remember project conventions, pitfalls, user preferences, or anything useful across sessions.
+- To save a fact for future sessions, include a line starting with "MEMORY_SAVE: " followed by the fact. These lines will be stripped before sending to %s. Use this to remember project conventions, pitfalls, user preferences, or anything useful across sessions.
 
 When the task is fully complete and you have verified the results, respond with exactly:
 TASK_COMPLETE
 
-Only send TASK_COMPLETE when you are confident the task is done. Do not send it prematurely.`
+Only send TASK_COMPLETE when you are confident the task is done. Do not send it prematurely.`,
+		agentName, agentName, agentName, agentName, agentName, agentName, agentName, agentName)
 
 	if len(memories) > 0 {
 		var sb strings.Builder

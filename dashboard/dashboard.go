@@ -26,6 +26,7 @@ type IterationEvent struct {
 	Tokens       *TokenUsage `json:"tokens,omitempty"`
 	Orchestrator string      `json:"orchestrator,omitempty"`
 	ClaudeOutput string      `json:"claude_output,omitempty"`
+	AgentOutput  string      `json:"agent_output,omitempty"`
 	Error        string      `json:"error,omitempty"`
 	Task         string      `json:"task,omitempty"`
 	Model        string      `json:"model,omitempty"`

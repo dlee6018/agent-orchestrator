@@ -11,7 +11,7 @@ import (
 
 // System prompt contains the completion marker instruction.
 func TestBuildSystemPrompt_ContainsMarker(t *testing.T) {
-	prompt := BuildSystemPrompt(nil)
+	prompt := BuildSystemPrompt("Claude Code", nil)
 	if !strings.Contains(prompt, TaskCompleteMarker) {
 		t.Fatal("system prompt should reference TASK_COMPLETE marker")
 	}
@@ -20,7 +20,7 @@ func TestBuildSystemPrompt_ContainsMarker(t *testing.T) {
 // System prompt includes memory facts when provided.
 func TestBuildSystemPrompt_WithMemories(t *testing.T) {
 	memories := []string{"Go 1.23 with no external deps", "Tests must not use t.Parallel()"}
-	prompt := BuildSystemPrompt(memories)
+	prompt := BuildSystemPrompt("Claude Code", memories)
 	if !strings.Contains(prompt, "Memory from previous sessions") {
 		t.Fatal("prompt should include memory section header")
 	}
@@ -33,7 +33,7 @@ func TestBuildSystemPrompt_WithMemories(t *testing.T) {
 
 // System prompt without memories has no memory section.
 func TestBuildSystemPrompt_NoMemories(t *testing.T) {
-	prompt := BuildSystemPrompt(nil)
+	prompt := BuildSystemPrompt("Claude Code", nil)
 	if strings.Contains(prompt, "Memory from previous sessions") {
 		t.Fatal("prompt should not include memory section when no memories")
 	}
@@ -41,9 +41,28 @@ func TestBuildSystemPrompt_NoMemories(t *testing.T) {
 
 // System prompt includes MEMORY_SAVE instruction.
 func TestBuildSystemPrompt_MemorySaveInstruction(t *testing.T) {
-	prompt := BuildSystemPrompt(nil)
+	prompt := BuildSystemPrompt("Claude Code", nil)
 	if !strings.Contains(prompt, "MEMORY_SAVE:") {
 		t.Fatal("prompt should include MEMORY_SAVE instruction")
+	}
+}
+
+// System prompt uses the provided agent name throughout.
+func TestBuildSystemPrompt_UsesAgentName(t *testing.T) {
+	prompt := BuildSystemPrompt("Codex", nil)
+	if !strings.Contains(prompt, "Codex CLI") {
+		t.Fatal("prompt should reference 'Codex CLI'")
+	}
+	if strings.Contains(prompt, "Claude Code") {
+		t.Fatal("prompt should not contain 'Claude Code' when agent is Codex")
+	}
+}
+
+// System prompt says "Claude Code CLI" when agent name is "Claude Code".
+func TestBuildSystemPrompt_ClaudeCode(t *testing.T) {
+	prompt := BuildSystemPrompt("Claude Code", nil)
+	if !strings.Contains(prompt, "Claude Code CLI") {
+		t.Fatal("prompt should reference 'Claude Code CLI'")
 	}
 }
 

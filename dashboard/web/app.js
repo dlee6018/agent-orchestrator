@@ -105,7 +105,7 @@
             var orchSection = document.createElement("div");
             orchSection.className = "iteration-section";
             var orchH3 = document.createElement("h3");
-            orchH3.textContent = "Orchestrator \u2192 Claude Code";
+            orchH3.textContent = "Orchestrator \u2192 Agent";
             var orchCode = document.createElement("pre");
             orchCode.className = "code-block";
             orchCode.textContent = data.orchestrator;
@@ -114,14 +114,15 @@
             body.appendChild(orchSection);
         }
 
-        if (data.claude_output) {
+        var agentOutputText = data.agent_output || data.claude_output;
+        if (agentOutputText) {
             var ccSection = document.createElement("div");
             ccSection.className = "iteration-section";
             var ccH3 = document.createElement("h3");
-            ccH3.textContent = "Claude Code Output";
+            ccH3.textContent = "Agent Output";
             var ccCode = document.createElement("pre");
             ccCode.className = "code-block";
-            ccCode.textContent = data.claude_output;
+            ccCode.textContent = agentOutputText;
             ccSection.appendChild(ccH3);
             ccSection.appendChild(ccCode);
             body.appendChild(ccSection);

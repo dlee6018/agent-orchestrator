@@ -175,6 +175,27 @@ func TestIterationEvent_JSON(t *testing.T) {
 	}
 }
 
+// IterationEvent includes both agent_output and claude_output in JSON when set.
+func TestIterationEvent_AgentOutputJSON(t *testing.T) {
+	event := IterationEvent{
+		Type:         "iteration_end",
+		Iteration:    1,
+		ClaudeOutput: "hello\n",
+		AgentOutput:  "hello\n",
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"agent_output"`) {
+		t.Fatalf("JSON missing agent_output: %s", s)
+	}
+	if !strings.Contains(s, `"claude_output"`) {
+		t.Fatalf("JSON missing claude_output: %s", s)
+	}
+}
+
 // Dashboard serves static files from the embedded filesystem.
 func TestStartDashboard_ServesStaticFiles(t *testing.T) {
 	b := NewSSEBroker()

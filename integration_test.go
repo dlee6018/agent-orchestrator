@@ -350,7 +350,7 @@ func TestIntegration_AutonomousLoop_CompletesTask(t *testing.T) {
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "echo a marker", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "echo a marker", "Claude Code", nil, nil)
 
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 API calls, got %d", callCount)
@@ -379,7 +379,7 @@ func TestIntegration_AutonomousLoop_MaxIterations(t *testing.T) {
 	setupAutonomous(t, srv.URL, 3)
 	createTestSession(t, session, workDir, command)
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "never-ending task", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "never-ending task", "Claude Code", nil, nil)
 
 	if callCount != 3 {
 		t.Fatalf("expected exactly 3 API calls (maxIterations=3), got %d", callCount)
@@ -412,7 +412,7 @@ func TestIntegration_AutonomousLoop_FeedbackLoop(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "echo test", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "echo test", "Claude Code", nil, nil)
 
 	if len(secondCallMessages) == 0 {
 		t.Fatal("second call messages not captured")
@@ -461,7 +461,7 @@ func TestIntegration_AutonomousLoop_ConversationHistoryStructure(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "run two commands", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "run two commands", "Claude Code", nil, nil)
 
 	if len(allCapturedMessages) < 3 {
 		t.Fatalf("expected at least 3 API calls, got %d", len(allCapturedMessages))
@@ -500,7 +500,7 @@ func TestIntegration_AutonomousLoop_ConversationHistoryStructure(t *testing.T) {
 		t.Fatalf("call 2: fourth message should be user, got %q", call2[3].Role)
 	}
 	if !strings.Contains(call2[3].Content, "Claude Code output:") {
-		t.Fatal("call 2: user feedback message missing 'Claude Code output:' prefix")
+		t.Fatal("call 2: user feedback message missing 'Claude Code output:' prefix (agentName=Claude Code)")
 	}
 
 	// --- Call 3: history grows by 2 more (assistant + user for iteration 2) ---
@@ -550,7 +550,7 @@ func TestIntegration_AutonomousLoop_TaskCompleteEmbedded(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "embedded completion test", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "embedded completion test", "Claude Code", nil, nil)
 
 	// Should have completed after 2 iterations (not run to maxIterations).
 	if callCount != 2 {
@@ -587,7 +587,7 @@ func TestIntegration_AutonomousLoop_APIErrorAbort(t *testing.T) {
 	createTestSession(t, session, workDir, command)
 
 	start := time.Now()
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "doomed task", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "doomed task", "Claude Code", nil, nil)
 	elapsed := time.Since(start)
 
 	calls := int(atomic.LoadInt32(&apiCalls))
@@ -629,7 +629,7 @@ func TestIntegration_AutonomousLoop_APIErrorRecovery(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "transient error task", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "transient error task", "Claude Code", nil, nil)
 
 	calls := int(atomic.LoadInt32(&apiCalls))
 	if calls != 3 {
@@ -676,7 +676,7 @@ func TestIntegration_AutonomousLoop_MultiStepTask(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "create and verify file", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "create and verify file", "Claude Code", nil, nil)
 
 	if callCount != 3 {
 		t.Fatalf("expected 3 API calls for multi-step task, got %d", callCount)
@@ -726,7 +726,7 @@ func TestIntegration_AutonomousLoop_TmuxRecoveryMidLoop(t *testing.T) {
 		_ = tmux.RunTmux("kill-session", "-t", session)
 	}()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "survive tmux kill", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "survive tmux kill", "Claude Code", nil, nil)
 
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 API calls, got %d", callCount)
@@ -759,7 +759,7 @@ func TestIntegration_AutonomousLoop_APIKeyAndModel(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "sk-test-key-123", "anthropic/claude-sonnet-4", "api key test", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "sk-test-key-123", "anthropic/claude-sonnet-4", "api key test", "Claude Code", nil, nil)
 
 	if receivedAuth != "Bearer sk-test-key-123" {
 		t.Fatalf("expected auth header %q, got %q", "Bearer sk-test-key-123", receivedAuth)
@@ -788,7 +788,7 @@ func TestIntegration_AutonomousLoop_ImmediateComplete(t *testing.T) {
 		t.Fatalf("initial capture: %v", err)
 	}
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "instant done", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "instant done", "Claude Code", nil, nil)
 
 	if callCount != 1 {
 		t.Fatalf("expected exactly 1 API call, got %d", callCount)
@@ -832,7 +832,7 @@ func TestIntegration_AutonomousLoop_EmitsSSEEvents(t *testing.T) {
 	ch, unsub := broker.Subscribe()
 	defer unsub()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "emit SSE events", broker, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "emit SSE events", "Claude Code", broker, nil)
 
 	var events []dashboard.IterationEvent
 	for {
@@ -910,7 +910,7 @@ func TestIntegration_AutonomousLoop_SSEEventContent(t *testing.T) {
 	ch, unsub := broker.Subscribe()
 	defer unsub()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "content test", broker, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "content test", "Claude Code", broker, nil)
 
 	var iterEndEvents []dashboard.IterationEvent
 	for {
@@ -961,7 +961,7 @@ func TestIntegration_AutonomousLoop_SSEMaxIterations(t *testing.T) {
 	ch, unsub := broker.Subscribe()
 	defer unsub()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "max iter test", broker, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "max iter test", "Claude Code", broker, nil)
 
 	var completeEvent *dashboard.IterationEvent
 	for {
@@ -1014,7 +1014,7 @@ func TestIntegration_AutonomousLoop_MemorySaved(t *testing.T) {
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "save memory test", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "save memory test", "Claude Code", nil, nil)
 
 	memPath := filepath.Join(workDir, "memory.json")
 	data, err := os.ReadFile(memPath)
@@ -1042,7 +1042,7 @@ func TestIntegration_AutonomousLoop_NoMemoryFileWhenEmpty(t *testing.T) {
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "no memory test", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "no memory test", "Claude Code", nil, nil)
 
 	memPath := filepath.Join(workDir, "memory.json")
 	if _, err := os.Stat(memPath); !os.IsNotExist(err) {
@@ -1078,7 +1078,7 @@ func TestIntegration_AutonomousLoop_MemoryInjectedIntoPrompt(t *testing.T) {
 		t.Fatalf("LoadMemory: %v", err)
 	}
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "memory prompt test", nil, memories)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "memory prompt test", "Claude Code", nil, memories)
 
 	if !strings.Contains(capturedSystemPrompt, "Memory from previous sessions") {
 		t.Fatal("system prompt should include memory section header")
@@ -1110,7 +1110,7 @@ func TestIntegration_AutonomousLoop_MemorySaveStrippedFromReply(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "strip test", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "strip test", "Claude Code", nil, nil)
 
 	pane, err := tmux.CapturePane(session)
 	if err != nil {
@@ -1137,7 +1137,7 @@ func TestIntegration_AutonomousLoop_MemorySavedOnMaxIterations(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 2)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "max iter memory", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "max iter memory", "Claude Code", nil, nil)
 
 	facts, err := memory.LoadMemory(workDir)
 	if err != nil {
@@ -1145,5 +1145,127 @@ func TestIntegration_AutonomousLoop_MemorySavedOnMaxIterations(t *testing.T) {
 	}
 	if len(facts) != 2 {
 		t.Fatalf("expected 2 memory facts from 2 iterations, got %d: %v", len(facts), facts)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Codex agent name integration tests
+// ---------------------------------------------------------------------------
+
+// When agentName is "Codex", the system prompt and feedback use "Codex" instead of "Claude Code".
+func TestIntegration_AutonomousLoop_CodexAgentName(t *testing.T) {
+	session, workDir, command := setupIntegration(t)
+
+	marker := fmt.Sprintf("CODEX_%d", time.Now().UnixNano())
+	callCount := 0
+	var capturedMessages [][]orchestrator.Message
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		var req orchestrator.Request
+		json.NewDecoder(r.Body).Decode(&req)
+		callCount++
+		snapshot := make([]orchestrator.Message, len(req.Messages))
+		copy(snapshot, req.Messages)
+		capturedMessages = append(capturedMessages, snapshot)
+
+		switch callCount {
+		case 1:
+			respondJSON(w, fmt.Sprintf("echo %s", marker), callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 5)
+	createTestSession(t, session, workDir, command)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "codex agent test", "Codex", nil, nil)
+
+	// Verify system prompt uses "Codex" and not "Claude Code".
+	if len(capturedMessages) < 1 {
+		t.Fatal("expected at least 1 API call")
+	}
+	sysPrompt := capturedMessages[0][0].Content
+	if !strings.Contains(sysPrompt, "Codex CLI") {
+		t.Fatal("system prompt should reference 'Codex CLI'")
+	}
+	if strings.Contains(sysPrompt, "Claude Code") {
+		t.Fatal("system prompt should not contain 'Claude Code' when agent is Codex")
+	}
+
+	// Verify feedback message uses "Codex output:" instead of "Claude Code output:".
+	if len(capturedMessages) >= 2 {
+		call2 := capturedMessages[1]
+		foundCodexFeedback := false
+		for _, msg := range call2 {
+			if msg.Role == "user" && strings.Contains(msg.Content, "Codex output:") {
+				foundCodexFeedback = true
+				break
+			}
+		}
+		if !foundCodexFeedback {
+			t.Fatal("second API call should contain 'Codex output:' in user feedback")
+		}
+	}
+}
+
+// SSE events include both agent_output and claude_output fields for backward compatibility.
+func TestIntegration_AutonomousLoop_SSEAgentOutput(t *testing.T) {
+	session, workDir, command := setupIntegration(t)
+
+	marker := fmt.Sprintf("SSEAGENT_%d", time.Now().UnixNano())
+	callCount := 0
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			respondJSON(w, fmt.Sprintf("echo %s", marker), callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 5)
+	createTestSession(t, session, workDir, command)
+
+	broker := dashboard.NewSSEBroker()
+	ch, unsub := broker.Subscribe()
+	defer unsub()
+
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "agent output test", "Claude Code", broker, nil)
+
+	var iterEndEvents []dashboard.IterationEvent
+	for {
+		select {
+		case msg := <-ch:
+			payload := strings.TrimPrefix(strings.TrimSpace(msg), "data: ")
+			var evt dashboard.IterationEvent
+			if err := json.Unmarshal([]byte(payload), &evt); err == nil {
+				if evt.Type == "iteration_end" {
+					iterEndEvents = append(iterEndEvents, evt)
+				}
+			}
+		default:
+			goto done
+		}
+	}
+done:
+
+	if len(iterEndEvents) == 0 {
+		t.Fatal("no iteration_end events received")
+	}
+
+	first := iterEndEvents[0]
+	// Both fields should be set for backward compatibility.
+	if first.ClaudeOutput == "" {
+		t.Fatal("iteration_end claude_output should be set")
+	}
+	if first.AgentOutput == "" {
+		t.Fatal("iteration_end agent_output should be set")
+	}
+	if first.ClaudeOutput != first.AgentOutput {
+		t.Fatalf("claude_output and agent_output should match: %q vs %q", first.ClaudeOutput, first.AgentOutput)
 	}
 }

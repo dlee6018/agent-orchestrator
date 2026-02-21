@@ -6,67 +6,45 @@ A Go CLI that orchestrates Claude Code sessions via tmux. It supports two modes:
 - **Chat mode** (`AUTONOMOUS_MODE=false`): Human-in-the-loop — reads stdin, sends messages to Claude Code, prints output.
 - **Autonomous mode** (`AUTONOMOUS_MODE=true`, default): An LLM (via OpenRouter) replaces the human — it receives a task, drives Claude Code back and forth, and stops when done.
 
-## Project Structure
+## Package Structure
 
-- `main.go` — Entire application in a single file (entry point, tmux management, chat loop, autonomous loop, OpenRouter client, recovery logic, dashboard server)
-- `main_test.go` — Unit tests (no tmux required)
-- `main_integration_test.go` — Integration tests (requires tmux, uses `//go:build integration` tag)
-- `web/` — Embedded web dashboard assets (compiled into the binary via `//go:embed`)
-  - `web/index.html` — Dashboard HTML structure
-  - `web/style.css` — Dark theme styling
-  - `web/app.js` — SSE client and live DOM updates
-  - `web/app.test.js` — JavaScript tests for the dashboard client
+| Package | Description |
+|---|---|
+| `main` (root) | Entry point, `runWithCleanup()`, `chatLoop()`, default constants |
+| `helpers/` | Environment and config utilities — `LoadEnvFile`, `EnvOrDefault`, `EnvBool`, `ValidateSessionName` |
+| `tmux/` | Tmux session management and I/O — session lifecycle, message sending, pane polling, text cleaning |
+| `dashboard/` | SSE broker + embedded web dashboard (`dashboard/web/`) |
+| `orchestrator/` | Autonomous loop + OpenRouter API — `AutonomousLoop`, `CallOpenRouter`, `BuildSystemPrompt`, API types |
+| `memory/` | Persistent memory — load/save, extract MEMORY_SAVE lines, deduplication, compaction |
+
+### Test Files
+
+| File / Package | Covers |
+|---|---|
+| `helpers/helpers_test.go` | `LoadEnvFile`, `EnvOrDefault`, `EnvBool`, `ValidateSessionName` |
+| `tmux/tmux_test.go` | Tmux arg building, command resolution, pane state parsing, pane update polling, ANSI cleaning, truncation |
+| `dashboard/dashboard_test.go` | SSE broker pub/sub, replay, unsubscribe, slow clients, event JSON, dashboard HTTP serving |
+| `orchestrator/orchestrator_test.go` | System prompt building, OpenRouter API client (mock server tests) |
+| `memory/memory_test.go` | Memory load/save round-trip, `ExtractMemorySaves`, deduplication, compaction |
+| `integration_test.go` (root) | All cross-package integration tests: real tmux session lifecycle, autonomous loop with mock OpenRouter, SSE events, persistent memory |
+
+### Other Files
+
+- `dashboard/web/` — Embedded web dashboard assets (compiled into the binary via `//go:embed`)
 - `go.mod` — Go 1.23, module `github.com/dlee6018/agent-orchestrator`, no external dependencies
 - `.env` — Runtime env vars (contains `TERMINATE_WHEN_QUIT=true`)
 - `README.md` — Project readme
 
-## Key Architecture
+## Dependency Graph (acyclic)
 
-All code lives in `main.go` in a single `package main`. There are no subdirectories or packages.
-
-### Core Flow
-1. `main()` → resolves config from env vars → `ensureClaudeSession()` → branch on `AUTONOMOUS_MODE`
-2. **Chat mode**: `chatLoop()` reads stdin, calls `sendAndCaptureWithRecovery()` per message
-3. **Autonomous mode**: `autonomousLoop()` calls OpenRouter LLM, sends its replies to Claude Code, feeds pane output back, repeats until `TASK_COMPLETE`
-4. `sendAndCaptureWithRecovery()` ensures session → sends keystrokes → polls for stable output → retries once on recoverable failures
-5. `waitForPaneUpdate()` polls `capture-pane` until output changes and stabilizes (configurable `stableWindow`)
-
-### Key Functions
-- `ensureClaudeSession` — Creates or validates the tmux session, restarts if dead
-- `sendAndCaptureWithRecovery` — Send + capture with one retry on recoverable errors
-- `waitForPaneUpdate` / `waitForPaneUpdateWithCapture` — Poll-based output detection
-- `waitForRuntimeReady` — Blocks until tmux session is alive and startup command hasn't crashed
-- `restartClaudeSession` — Kill + recreate session from scratch
-- `resolveStartupCommand` — Validates command, resolves binary to absolute path via `LookPath`
-- `shouldRecoverSession` — Checks error strings to decide if session restart is warranted
-- `autonomousLoop` — Agent loop: LLM decides → send to Claude Code → capture output → feed back to LLM → repeat; emits SSE events to the dashboard
-- `callOpenRouter` — Sends chat completion request to OpenRouter API, returns reply and token usage
-- `cleanPaneOutput` — Strips ANSI escapes, collapses blank lines, trims whitespace from pane captures
-- `buildSystemPrompt` — Returns the system prompt that instructs the orchestrator LLM (includes persistent memory if available)
-- `loadMemory` / `saveMemory` — Read/write `memory.json` (persistent facts across sessions)
-- `extractMemorySaves` — Scans LLM replies for `MEMORY_SAVE:` lines, returns extracted facts and cleaned reply
-- `deduplicateMemory` — Removes duplicate facts preserving order
-- `compactMemory` — Asks the LLM to consolidate facts when they exceed the threshold
-- `truncateForLog` — Truncates long strings for console logging
-- `runWithCleanup` — Wraps a function with optional signal handling and session cleanup
-- `loadEnvFile` — Parses `.env` file and sets environment variables at startup
-- `sseBroker` — Fan-out SSE event broadcaster (subscribe/publish/unsubscribe)
-- `startDashboard` — Starts the embedded HTTP server for the web dashboard
-- `openBrowser` — Opens the dashboard URL in the default browser
-- `emitEvent` — Nil-safe helper that publishes an event to the SSE broker
-
-### Dashboard Event Types
-The autonomous loop emits structured SSE events consumed by the web dashboard:
-- `task_info` — Initial task metadata (replayed to late-joining clients)
-- `iteration_start` — Fired when an iteration begins
-- `iteration_end` — Fired when an iteration completes, includes duration and token usage
-- `error` — Fired on iteration errors (e.g. API failures)
-- `complete` — Fired when the task finishes or is aborted
-
-Events carry an `iterationEvent` payload with fields: iteration number, timestamp, duration, token usage (`tokenUsage` struct with prompt/completion/total), orchestrator message, Claude output, and error info.
-
-### Tmux Isolation
-All tmux commands go through `runTmux()` / `tmuxArgs()` which prepend `-L <socket>` to isolate from the user's real tmux. The socket name defaults to `gt-claude-loop`.
+```
+helpers  (no deps)
+tmux     (no deps)
+dashboard (no deps)
+memory   (no deps — uses CompactFunc callback)
+orchestrator → tmux, memory, dashboard
+main → helpers, tmux, dashboard, memory, orchestrator
+```
 
 ## Environment Variables
 
@@ -114,9 +92,12 @@ Integration tests create isolated tmux servers via unique sockets and clean them
 ## Conventions
 
 - After making changes, always provide a summary explaining what was changed and why
-- Single-file architecture — all application code goes in `main.go`
+- Add a comment above every function describing what it does
+- When writing tests, cover both success and failure cases — not just the happy path
+- Multi-package architecture — each domain (tmux, dashboard, orchestrator, memory, helpers) in its own package under the project root
 - No external dependencies — stdlib only
 - Error messages include the function name as prefix (e.g., `"createSession: new-session: ..."`)
-- Input validation uses allowlists (e.g., `validateSessionName` permits only `[a-zA-Z0-9_-]`)
-- Package-level vars (`pollInterval`, `stableWindow`, `startupSettleWindow`, `tmuxSocket`, `openRouterEndpoint`, `maxIterations`, `maxFacts`, `keystrokeSleep`) are overridden in tests via helpers like `overrideTimers` and `setupIntegration`
+- Input validation uses allowlists (e.g., `ValidateSessionName` permits only `[a-zA-Z0-9_-]`)
+- Package-level vars (`PollInterval`, `StableWindow`, `StartupSettleWindow`, `Socket`, `Endpoint`, `MaxIterations`, `MaxFacts`, `KeystrokeSleep`) are overridden in tests
 - The autonomous loop completion signal is the literal string `TASK_COMPLETE` checked via `strings.Contains`
+- Circular dependencies are broken via callbacks (e.g., `memory.CompactFunc` avoids memory → orchestrator dependency)

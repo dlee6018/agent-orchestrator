@@ -14,6 +14,12 @@ const (
 	runtimeReadyTTL = 10 * time.Second
 )
 
+// ErrAgentStillWorking indicates the pane content hasn't changed (agent is still processing).
+var ErrAgentStillWorking = errors.New("agent is still working")
+
+// ErrDidNotStabilize indicates the pane content changed but did not settle within the timeout.
+var ErrDidNotStabilize = errors.New("content changed but did not stabilize")
+
 // Socket is the tmux socket name for session isolation.
 var Socket string
 
@@ -189,9 +195,9 @@ func WaitForPaneUpdateWithCapture(previous string, timeout time.Duration, captur
 		if !alive {
 			return last, fmt.Errorf("WaitForPaneUpdateWithCapture: agent process is dead, no pane changes within %s", timeout)
 		}
-		return last, fmt.Errorf("WaitForPaneUpdateWithCapture: agent is still working, no pane changes within %s", timeout)
+		return last, fmt.Errorf("WaitForPaneUpdateWithCapture: no pane changes within %s: %w", timeout, ErrAgentStillWorking)
 	}
-	return last, fmt.Errorf("WaitForPaneUpdateWithCapture: timeout (%s) reached, content changed but did not stabilize", timeout)
+	return last, fmt.Errorf("WaitForPaneUpdateWithCapture: timeout (%s) reached: %w", timeout, ErrDidNotStabilize)
 }
 
 // WaitForRuntimeReady blocks until the tmux session is alive and the startup command hasn't crashed.

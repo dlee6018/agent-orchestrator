@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -19,9 +20,10 @@ var MaxIterations = 0
 // and feeds back the pane output until the LLM signals TASK_COMPLETE.
 // If MaxIterations > 0 the loop stops after that many iterations.
 // agentName is the display name of the inner coding agent (e.g. "Claude Code", "Codex").
+// agentModel is the inner agent's model name (DEFAULT_MODEL, e.g. "gpt-5.3-codex").
 // memories carries persistent facts from previous sessions; new facts
 // are extracted from MEMORY_SAVE: lines and saved on exit.
-func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName string, broker *dashboard.SSEBroker, memories []string) {
+func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName, agentModel string, broker *dashboard.SSEBroker, memories []string) {
 	fmt.Println("========================================")
 	fmt.Println("AUTONOMOUS MODE")
 	fmt.Printf("Model: %s\n", model)
@@ -34,11 +36,13 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName st
 	fmt.Println("========================================")
 
 	broker.Publish(dashboard.IterationEvent{
-		Type:      "task_info",
-		Timestamp: time.Now().Format(time.RFC3339),
-		MaxIter:   MaxIterations,
-		Task:      task,
-		Model:     model,
+		Type:       "task_info",
+		Timestamp:  time.Now().Format(time.RFC3339),
+		MaxIter:    MaxIterations,
+		Task:       task,
+		Model:      model,
+		AgentModel: agentModel,
+		Agent:      agentName,
 	})
 
 	// Save memory on exit (deferred early so it runs on all exit paths).
@@ -95,6 +99,11 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName st
 			}
 		}
 
+		// Ensure messages end with a user message (required by some providers like Bedrock).
+		if len(messages) > 0 && messages[len(messages)-1].Role == "assistant" {
+			messages = append(messages, Message{Role: "user", Content: "Continue. What is your next instruction?"})
+		}
+
 		// Call the orchestrator LLM.
 		reply, usage, err := CallOpenRouter(apiKey, model, messages, 0.3)
 		if err != nil {
@@ -119,7 +128,10 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName st
 			fmt.Fprintln(os.Stderr, "│ Retrying in 5s...")
 			time.Sleep(5 * time.Second)
 			if MaxIterations > 0 {
-				i-- // Don't count API errors toward iteration limit.
+				// Decrement i so the subsequent loop increment (i++) restores it
+			// to its pre-iteration value, effectively not counting this API
+			// error toward the iteration limit.
+			i--
 			}
 			continue
 		}
@@ -162,6 +174,7 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName st
 					Total:      usage.TotalTokens,
 				},
 				Orchestrator: reply,
+				MemoryFacts:  newFacts,
 			})
 			broker.Publish(dashboard.IterationEvent{
 				Type:      "complete",
@@ -175,8 +188,9 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName st
 		// Send the LLM's reply to Claude Code.
 		pane, err := tmux.SendAndCaptureWithRecovery(session, workDir, command, reply, lastPane)
 
-		// If the agent is still working, keep polling instead of calling the LLM.
-		for err != nil && strings.Contains(err.Error(), "agent is still working") {
+		// If the agent is still working (no changes or output still changing),
+		// keep polling instead of calling the LLM.
+		for err != nil && (errors.Is(err, tmux.ErrAgentStillWorking) || errors.Is(err, tmux.ErrDidNotStabilize)) {
 			fmt.Printf("│ %s is still working, waiting for output...\n", agentName)
 			lastPane = pane
 			pane, err = tmux.WaitForPaneUpdate(session, lastPane, 90*time.Second)
@@ -197,6 +211,7 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName st
 					Total:      usage.TotalTokens,
 				},
 				Orchestrator: reply,
+				MemoryFacts:  newFacts,
 				Error:        fmt.Sprintf("tmux error: %v", err),
 			})
 			// Feed the error back so the LLM can adapt.
@@ -232,6 +247,7 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName st
 			Orchestrator: reply,
 			ClaudeOutput: cleaned,
 			AgentOutput:  cleaned,
+			MemoryFacts:  newFacts,
 		})
 
 		// Append to conversation history.

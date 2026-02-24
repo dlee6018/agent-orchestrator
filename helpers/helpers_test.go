@@ -201,8 +201,8 @@ func TestResolveAgentConfig_ClaudeModel(t *testing.T) {
 // ResolveAgentConfig returns codex command and display name for gpt models.
 func TestResolveAgentConfig_GPTModel(t *testing.T) {
 	cmd, name := ResolveAgentConfig("gpt-4o")
-	if cmd != "codex --approval-mode full-auto" {
-		t.Fatalf("command: got %q, want %q", cmd, "codex --approval-mode full-auto")
+	if cmd != "codex" {
+		t.Fatalf("command: got %q, want %q", cmd, "codex")
 	}
 	if name != "Codex" {
 		t.Fatalf("name: got %q, want %q", name, "Codex")
@@ -234,8 +234,19 @@ func TestResolveAgentConfig_UnknownPrefix(t *testing.T) {
 // ResolveAgentConfig handles case-insensitive model prefix matching.
 func TestResolveAgentConfig_CaseInsensitive(t *testing.T) {
 	cmd, name := ResolveAgentConfig("GPT-4o")
-	if cmd != "codex --approval-mode full-auto" {
-		t.Fatalf("command: got %q, want %q", cmd, "codex --approval-mode full-auto")
+	if cmd != "codex" {
+		t.Fatalf("command: got %q, want %q", cmd, "codex")
+	}
+	if name != "Codex" {
+		t.Fatalf("name: got %q, want %q", name, "Codex")
+	}
+}
+
+// ResolveAgentConfig returns codex command for "codex" prefix models.
+func TestResolveAgentConfig_CodexPrefix(t *testing.T) {
+	cmd, name := ResolveAgentConfig("codex")
+	if cmd != "codex" {
+		t.Fatalf("command: got %q, want %q", cmd, "codex")
 	}
 	if name != "Codex" {
 		t.Fatalf("name: got %q, want %q", name, "Codex")

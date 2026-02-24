@@ -147,8 +147,8 @@ func TestWaitForPaneUpdateWithCapture_TimeoutNoChanges(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if !strings.Contains(err.Error(), "agent is still working") {
-		t.Fatalf("expected 'agent is still working' error, got: %v", err)
+	if !errors.Is(err, ErrAgentStillWorking) {
+		t.Fatalf("expected ErrAgentStillWorking, got: %v", err)
 	}
 	if got != "same" {
 		t.Fatalf("got %q, want same", got)

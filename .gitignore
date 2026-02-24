@@ -1,3 +1,6 @@
 .env
 agent-orchestrator
 go-orchestrator
+main
+.DS_Store
+memory.json

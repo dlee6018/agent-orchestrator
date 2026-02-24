@@ -253,6 +253,57 @@ header h1 { font-size: 1.5rem; font-weight: 600; }
     40% { opacity: 1; }
 }
 
+/* Memory facts */
+.memory-facts {
+    list-style: none;
+    padding: 0;
+}
+
+.memory-facts li {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 12px;
+    margin-bottom: 4px;
+    font-size: 0.8125rem;
+    font-family: var(--font-mono);
+    color: var(--success);
+}
+
+.memory-facts li::before {
+    content: "\1F4BE ";
+}
+
+/* Agent badges (multi-agent mode) */
+.agent-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.agent-badge.planner { background: #1f6feb; color: #fff; }
+.agent-badge.executor { background: #238636; color: #fff; }
+.agent-badge.verifier { background: #9e6a03; color: #fff; }
+
+.mode-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--border);
+    color: var(--text);
+    margin-left: 8px;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
     .summary-grid { grid-template-columns: repeat(2, 1fr); }

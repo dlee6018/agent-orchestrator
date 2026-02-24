@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"sync"
 )
 
@@ -27,9 +28,13 @@ type IterationEvent struct {
 	Orchestrator string      `json:"orchestrator,omitempty"`
 	ClaudeOutput string      `json:"claude_output,omitempty"`
 	AgentOutput  string      `json:"agent_output,omitempty"`
+	MemoryFacts  []string    `json:"memory_facts,omitempty"`
 	Error        string      `json:"error,omitempty"`
 	Task         string      `json:"task,omitempty"`
-	Model        string      `json:"model,omitempty"`
+	Model        string      `json:"model,omitempty"`         // orchestrator LLM model (OPENROUTER_MODEL)
+	AgentModel   string      `json:"agent_model,omitempty"`   // inner coding agent model (DEFAULT_MODEL)
+	Agent        string      `json:"agent,omitempty"`         // which agent was addressed (multi-agent mode)
+	Mode         string      `json:"mode,omitempty"`  // "multi-agent" when applicable
 }
 
 // TokenUsage tracks prompt, completion, and total token counts.
@@ -163,5 +168,16 @@ func StartDashboard(broker *SSEBroker, port int) (string, error) {
 
 // OpenBrowser attempts to open the URL in the default browser.
 func OpenBrowser(url string) {
-	_ = exec.Command("open", url).Start()
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		return
+	}
+	_ = cmd.Start()
 }

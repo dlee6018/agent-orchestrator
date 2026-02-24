@@ -72,10 +72,10 @@ func EnvBool(key string, fallback bool) bool {
 }
 
 // ResolveAgentConfig maps a DEFAULT_MODEL value to the CLI command and display name.
-// Models starting with "gpt" (case-insensitive) resolve to Codex; all others default to Claude Code.
+// Models starting with "gpt" or "codex" (case-insensitive) resolve to Codex; all others default to Claude Code.
 func ResolveAgentConfig(defaultModel string) (command, displayName string) {
-	if strings.HasPrefix(strings.ToLower(defaultModel), "gpt") {
-		return "codex --approval-mode full-auto", "Codex"
+	if strings.HasPrefix(strings.ToLower(defaultModel), "gpt") || strings.HasPrefix(strings.ToLower(defaultModel), "codex") {
+		return "codex", "Codex"
 	}
 	return "claude --dangerously-skip-permissions --setting-sources user", "Claude Code"
 }

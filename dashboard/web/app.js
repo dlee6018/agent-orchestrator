@@ -27,7 +27,10 @@
         spinner: document.getElementById("spinner"),
         completionBanner: document.getElementById("completion-banner"),
         completionTitle: document.getElementById("completion-title"),
-        completionMessage: document.getElementById("completion-message")
+        completionMessage: document.getElementById("completion-message"),
+        taskMode: document.getElementById("task-mode"),
+        taskAgent: document.getElementById("task-agent"),
+        taskAgentModel: document.getElementById("task-agent-model")
     };
 
     function formatDuration(ms) {
@@ -94,6 +97,13 @@
             metaDiv.appendChild(errSpan);
         }
 
+        if (data.agent) {
+            var badge = document.createElement("span");
+            badge.className = "agent-badge " + data.agent;
+            badge.textContent = data.agent;
+            numSpan.appendChild(badge);
+        }
+
         header.appendChild(numSpan);
         header.appendChild(metaDiv);
 
@@ -105,7 +115,11 @@
             var orchSection = document.createElement("div");
             orchSection.className = "iteration-section";
             var orchH3 = document.createElement("h3");
-            orchH3.textContent = "Orchestrator \u2192 Agent";
+            var orchLabel = "Orchestrator \u2192 Agent";
+            if (data.agent) {
+                orchLabel = "Orchestrator \u2192 " + data.agent.charAt(0).toUpperCase() + data.agent.slice(1);
+            }
+            orchH3.textContent = orchLabel;
             var orchCode = document.createElement("pre");
             orchCode.className = "code-block";
             orchCode.textContent = data.orchestrator;
@@ -126,6 +140,23 @@
             ccSection.appendChild(ccH3);
             ccSection.appendChild(ccCode);
             body.appendChild(ccSection);
+        }
+
+        if (data.memory_facts && data.memory_facts.length > 0) {
+            var memSection = document.createElement("div");
+            memSection.className = "iteration-section";
+            var memH3 = document.createElement("h3");
+            memH3.textContent = "Memory Saved";
+            var memList = document.createElement("ul");
+            memList.className = "memory-facts";
+            for (var mi = 0; mi < data.memory_facts.length; mi++) {
+                var li = document.createElement("li");
+                li.textContent = data.memory_facts[mi];
+                memList.appendChild(li);
+            }
+            memSection.appendChild(memH3);
+            memSection.appendChild(memList);
+            body.appendChild(memSection);
         }
 
         if (data.error) {
@@ -196,9 +227,18 @@
             case "task_info":
                 els.taskInfo.classList.remove("hidden");
                 els.taskDescription.textContent = data.task || "";
+                els.taskAgent.textContent = data.agent || "Claude Code";
+                els.taskAgentModel.textContent = data.agent_model || data.model || "";
                 els.taskModel.textContent = data.model || "";
                 maxIter = data.max_iter || 0;
                 els.taskMaxIter.textContent = maxIter > 0 ? maxIter : "Unlimited";
+                if (data.mode === "multi-agent" && els.taskMode) {
+                    els.taskMode.innerHTML = "";
+                    var modeBadge = document.createElement("span");
+                    modeBadge.className = "mode-badge";
+                    modeBadge.textContent = "Multi-Agent";
+                    els.taskMode.appendChild(modeBadge);
+                }
                 els.summary.classList.remove("hidden");
                 els.spinner.classList.remove("hidden");
                 updateSummary();

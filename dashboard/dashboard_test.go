@@ -196,6 +196,128 @@ func TestIterationEvent_AgentOutputJSON(t *testing.T) {
 	}
 }
 
+// task_info event includes the agent and agent_model fields in JSON.
+func TestIterationEvent_TaskInfoAgentField(t *testing.T) {
+	event := IterationEvent{
+		Type:       "task_info",
+		Task:       "build feature",
+		Model:      "anthropic/claude-opus-4.6",
+		AgentModel: "gpt-5.3-codex",
+		Agent:      "Codex",
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"agent":"Codex"`) {
+		t.Fatalf("JSON missing agent field: %s", s)
+	}
+	if !strings.Contains(s, `"agent_model":"gpt-5.3-codex"`) {
+		t.Fatalf("JSON missing agent_model field: %s", s)
+	}
+	if !strings.Contains(s, `"model":"anthropic/claude-opus-4.6"`) {
+		t.Fatalf("JSON missing model (orchestrator) field: %s", s)
+	}
+}
+
+// task_info event omits agent and agent_model fields when empty.
+func TestIterationEvent_TaskInfoAgentOmitted(t *testing.T) {
+	event := IterationEvent{
+		Type:  "task_info",
+		Task:  "build feature",
+		Model: "anthropic/claude-opus-4.6",
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	if strings.Contains(s, `"agent"`) {
+		t.Fatalf("empty agent should be omitted: %s", s)
+	}
+	if strings.Contains(s, `"agent_model"`) {
+		t.Fatalf("empty agent_model should be omitted: %s", s)
+	}
+}
+
+// SSE broker relays agent field in task_info to subscribers.
+func TestSSEBroker_TaskInfoIncludesAgent(t *testing.T) {
+	b := NewSSEBroker()
+	ch, unsub := b.Subscribe()
+	defer unsub()
+
+	b.Publish(IterationEvent{Type: "task_info", Task: "test", Agent: "Codex"})
+
+	select {
+	case msg := <-ch:
+		if !strings.Contains(msg, `"agent":"Codex"`) {
+			t.Fatalf("task_info SSE should contain agent: %s", msg)
+		}
+	default:
+		t.Fatal("expected a message on the channel")
+	}
+}
+
+// Embedded index.html contains the task-agent and task-agent-model elements.
+func TestStartDashboard_IndexContainsAgentElements(t *testing.T) {
+	b := NewSSEBroker()
+	addr, err := StartDashboard(b, 0)
+	if err != nil {
+		t.Fatalf("StartDashboard: %v", err)
+	}
+
+	resp, err := http.Get("http://" + addr + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	s := string(body)
+	if !strings.Contains(s, `id="task-agent"`) {
+		t.Fatal("index.html should contain task-agent element")
+	}
+	if !strings.Contains(s, `id="task-agent-model"`) {
+		t.Fatal("index.html should contain task-agent-model element")
+	}
+}
+
+// iteration_end event includes memory_facts in JSON when present.
+func TestIterationEvent_MemoryFactsJSON(t *testing.T) {
+	event := IterationEvent{
+		Type:        "iteration_end",
+		Iteration:   1,
+		MemoryFacts: []string{"project uses Go 1.23", "no external deps"},
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"memory_facts"`) {
+		t.Fatalf("JSON missing memory_facts field: %s", s)
+	}
+	if !strings.Contains(s, "project uses Go 1.23") {
+		t.Fatalf("JSON missing first fact: %s", s)
+	}
+}
+
+// iteration_end event omits memory_facts when nil.
+func TestIterationEvent_MemoryFactsOmitted(t *testing.T) {
+	event := IterationEvent{
+		Type:      "iteration_end",
+		Iteration: 1,
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	if strings.Contains(s, `"memory_facts"`) {
+		t.Fatalf("nil memory_facts should be omitted: %s", s)
+	}
+}
+
 // Dashboard serves static files from the embedded filesystem.
 func TestStartDashboard_ServesStaticFiles(t *testing.T) {
 	b := NewSSEBroker()

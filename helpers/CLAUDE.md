@@ -12,6 +12,7 @@ Pure utility functions for environment variable handling and input validation. N
 | `EnvOrDefault(key, fallback)` | Returns env var value, or fallback if unset/empty/whitespace |
 | `EnvBool(key, fallback)` | Parses boolean env var (true/1/yes or false/0/no) |
 | `ValidateSessionName(name)` | Rejects names with characters outside `[a-zA-Z0-9_-]` |
+| `ResolveAgentConfig(defaultModel)` | Maps a model name to `(command, displayName)` — `gpt*` → `("codex", "Codex")`, otherwise → `("claude --dangerously-skip-permissions --setting-sources user", "Claude Code")` |
 
 ## Testing
 

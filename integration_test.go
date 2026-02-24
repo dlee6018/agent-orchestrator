@@ -350,7 +350,7 @@ func TestIntegration_AutonomousLoop_CompletesTask(t *testing.T) {
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "echo a marker", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "echo a marker", "Claude Code", "test-agent-model", nil, nil)
 
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 API calls, got %d", callCount)
@@ -379,7 +379,7 @@ func TestIntegration_AutonomousLoop_MaxIterations(t *testing.T) {
 	setupAutonomous(t, srv.URL, 3)
 	createTestSession(t, session, workDir, command)
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "never-ending task", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "never-ending task", "Claude Code", "test-agent-model", nil, nil)
 
 	if callCount != 3 {
 		t.Fatalf("expected exactly 3 API calls (maxIterations=3), got %d", callCount)
@@ -412,7 +412,7 @@ func TestIntegration_AutonomousLoop_FeedbackLoop(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "echo test", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "echo test", "Claude Code", "test-agent-model", nil, nil)
 
 	if len(secondCallMessages) == 0 {
 		t.Fatal("second call messages not captured")
@@ -461,7 +461,7 @@ func TestIntegration_AutonomousLoop_ConversationHistoryStructure(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "run two commands", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "run two commands", "Claude Code", "test-agent-model", nil, nil)
 
 	if len(allCapturedMessages) < 3 {
 		t.Fatalf("expected at least 3 API calls, got %d", len(allCapturedMessages))
@@ -550,7 +550,7 @@ func TestIntegration_AutonomousLoop_TaskCompleteEmbedded(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "embedded completion test", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "embedded completion test", "Claude Code", "test-agent-model", nil, nil)
 
 	// Should have completed after 2 iterations (not run to maxIterations).
 	if callCount != 2 {
@@ -587,7 +587,7 @@ func TestIntegration_AutonomousLoop_APIErrorAbort(t *testing.T) {
 	createTestSession(t, session, workDir, command)
 
 	start := time.Now()
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "doomed task", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "doomed task", "Claude Code", "test-agent-model", nil, nil)
 	elapsed := time.Since(start)
 
 	calls := int(atomic.LoadInt32(&apiCalls))
@@ -629,7 +629,7 @@ func TestIntegration_AutonomousLoop_APIErrorRecovery(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "transient error task", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "transient error task", "Claude Code", "test-agent-model", nil, nil)
 
 	calls := int(atomic.LoadInt32(&apiCalls))
 	if calls != 3 {
@@ -676,7 +676,7 @@ func TestIntegration_AutonomousLoop_MultiStepTask(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 10)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "create and verify file", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "create and verify file", "Claude Code", "test-agent-model", nil, nil)
 
 	if callCount != 3 {
 		t.Fatalf("expected 3 API calls for multi-step task, got %d", callCount)
@@ -726,7 +726,7 @@ func TestIntegration_AutonomousLoop_TmuxRecoveryMidLoop(t *testing.T) {
 		_ = tmux.RunTmux("kill-session", "-t", session)
 	}()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "survive tmux kill", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "survive tmux kill", "Claude Code", "test-agent-model", nil, nil)
 
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 API calls, got %d", callCount)
@@ -759,7 +759,7 @@ func TestIntegration_AutonomousLoop_APIKeyAndModel(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "sk-test-key-123", "anthropic/claude-sonnet-4", "api key test", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "sk-test-key-123", "anthropic/claude-sonnet-4", "api key test", "Claude Code", "test-agent-model", nil, nil)
 
 	if receivedAuth != "Bearer sk-test-key-123" {
 		t.Fatalf("expected auth header %q, got %q", "Bearer sk-test-key-123", receivedAuth)
@@ -788,7 +788,7 @@ func TestIntegration_AutonomousLoop_ImmediateComplete(t *testing.T) {
 		t.Fatalf("initial capture: %v", err)
 	}
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "instant done", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "instant done", "Claude Code", "test-agent-model", nil, nil)
 
 	if callCount != 1 {
 		t.Fatalf("expected exactly 1 API call, got %d", callCount)
@@ -832,7 +832,7 @@ func TestIntegration_AutonomousLoop_EmitsSSEEvents(t *testing.T) {
 	ch, unsub := broker.Subscribe()
 	defer unsub()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "emit SSE events", "Claude Code", broker, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "emit SSE events", "Claude Code", "test-agent-model", broker, nil)
 
 	var events []dashboard.IterationEvent
 	for {
@@ -910,7 +910,7 @@ func TestIntegration_AutonomousLoop_SSEEventContent(t *testing.T) {
 	ch, unsub := broker.Subscribe()
 	defer unsub()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "content test", "Claude Code", broker, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "content test", "Claude Code", "test-agent-model", broker, nil)
 
 	var iterEndEvents []dashboard.IterationEvent
 	for {
@@ -961,7 +961,7 @@ func TestIntegration_AutonomousLoop_SSEMaxIterations(t *testing.T) {
 	ch, unsub := broker.Subscribe()
 	defer unsub()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "max iter test", "Claude Code", broker, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "max iter test", "Claude Code", "test-agent-model", broker, nil)
 
 	var completeEvent *dashboard.IterationEvent
 	for {
@@ -1014,7 +1014,7 @@ func TestIntegration_AutonomousLoop_MemorySaved(t *testing.T) {
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "save memory test", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "save memory test", "Claude Code", "test-agent-model", nil, nil)
 
 	memPath := filepath.Join(workDir, "memory.json")
 	data, err := os.ReadFile(memPath)
@@ -1042,7 +1042,7 @@ func TestIntegration_AutonomousLoop_NoMemoryFileWhenEmpty(t *testing.T) {
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "no memory test", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "no memory test", "Claude Code", "test-agent-model", nil, nil)
 
 	memPath := filepath.Join(workDir, "memory.json")
 	if _, err := os.Stat(memPath); !os.IsNotExist(err) {
@@ -1078,7 +1078,7 @@ func TestIntegration_AutonomousLoop_MemoryInjectedIntoPrompt(t *testing.T) {
 		t.Fatalf("LoadMemory: %v", err)
 	}
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "memory prompt test", "Claude Code", nil, memories)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "memory prompt test", "Claude Code", "test-agent-model", nil, memories)
 
 	if !strings.Contains(capturedSystemPrompt, "Memory from previous sessions") {
 		t.Fatal("system prompt should include memory section header")
@@ -1110,7 +1110,7 @@ func TestIntegration_AutonomousLoop_MemorySaveStrippedFromReply(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "strip test", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "strip test", "Claude Code", "test-agent-model", nil, nil)
 
 	pane, err := tmux.CapturePane(session)
 	if err != nil {
@@ -1137,7 +1137,7 @@ func TestIntegration_AutonomousLoop_MemorySavedOnMaxIterations(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 2)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "max iter memory", "Claude Code", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "max iter memory", "Claude Code", "test-agent-model", nil, nil)
 
 	facts, err := memory.LoadMemory(workDir)
 	if err != nil {
@@ -1179,7 +1179,7 @@ func TestIntegration_AutonomousLoop_CodexAgentName(t *testing.T) {
 
 	setupAutonomous(t, srv.URL, 5)
 	createTestSession(t, session, workDir, command)
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "codex agent test", "Codex", nil, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "codex agent test", "Codex", "gpt-5.3-codex", nil, nil)
 
 	// Verify system prompt uses "Codex" and not "Claude Code".
 	if len(capturedMessages) < 1 {
@@ -1234,7 +1234,7 @@ func TestIntegration_AutonomousLoop_SSEAgentOutput(t *testing.T) {
 	ch, unsub := broker.Subscribe()
 	defer unsub()
 
-	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "agent output test", "Claude Code", broker, nil)
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "agent output test", "Claude Code", "test-agent-model", broker, nil)
 
 	var iterEndEvents []dashboard.IterationEvent
 	for {
@@ -1267,5 +1267,534 @@ done:
 	}
 	if first.ClaudeOutput != first.AgentOutput {
 		t.Fatalf("claude_output and agent_output should match: %q vs %q", first.ClaudeOutput, first.AgentOutput)
+	}
+}
+
+// When pane output changes but does not stabilize (agent is thinking/streaming),
+// the loop waits and retries instead of feeding the timeout error to the LLM.
+func TestIntegration_AutonomousLoop_DidNotStabilizeWaits(t *testing.T) {
+	session, workDir, command := setupIntegration(t)
+
+	// Use a very short StableWindow so the first capture attempt times out
+	// with "did not stabilize" while the bash loop is running.
+	origStable := tmux.StableWindow
+	tmux.StableWindow = 100 * time.Millisecond
+	t.Cleanup(func() { tmux.StableWindow = origStable })
+
+	marker := fmt.Sprintf("STABLE_%d", time.Now().UnixNano())
+	var callCount int32
+	var lastCallMessages []orchestrator.Message
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		var req orchestrator.Request
+		json.NewDecoder(r.Body).Decode(&req)
+		n := atomic.AddInt32(&callCount, 1)
+		lastCallMessages = req.Messages
+		switch n {
+		case 1:
+			// A command that produces rapidly changing output (triggers "did not stabilize"),
+			// then finishes and prints the marker.
+			respondJSON(w, fmt.Sprintf("for i in $(seq 1 20); do echo tick$i; sleep 0.05; done; echo %s", marker), int(n))
+		default:
+			respondJSON(w, "TASK_COMPLETE", int(n))
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 5)
+	createTestSession(t, session, workDir, command)
+
+	orchestrator.AutonomousLoop(session, workDir, command, "test-key", "test-model", "wait for stabilize", "Claude Code", "test-agent-model", nil, nil)
+
+	// The "did not stabilize" error should NOT appear in conversation history.
+	for _, msg := range lastCallMessages {
+		if msg.Role == "user" && strings.Contains(msg.Content, "did not stabilize") {
+			t.Fatal("'did not stabilize' error should not be fed back to the LLM; the loop should wait instead")
+		}
+	}
+
+	// The marker should appear in the pane (loop waited for output to finish).
+	pane, err := tmux.CapturePane(session)
+	if err != nil {
+		t.Fatalf("CapturePane: %v", err)
+	}
+	if !strings.Contains(pane, marker) {
+		t.Fatalf("marker %q not in pane; loop may not have waited for output to stabilize:\n%s", marker, pane)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Multi-agent integration tests
+// ---------------------------------------------------------------------------
+
+// setupMultiAgentIntegration creates 3 tmux sessions for multi-agent testing.
+func setupMultiAgentIntegration(t *testing.T) (agents []orchestrator.AgentState, workDir, command string) {
+	t.Helper()
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available, skipping integration test")
+	}
+
+	origPoll := tmux.PollInterval
+	origStable := tmux.StableWindow
+	origSettle := tmux.StartupSettleWindow
+	origSocket := tmux.Socket
+
+	socket := fmt.Sprintf("go-orch-ma-%d", time.Now().UnixNano())
+	workDir = t.TempDir()
+	command = "bash"
+
+	tmux.Socket = socket
+	tmux.PollInterval = 50 * time.Millisecond
+	tmux.StableWindow = 500 * time.Millisecond
+	tmux.StartupSettleWindow = 300 * time.Millisecond
+
+	roles := []orchestrator.AgentRole{orchestrator.AgentPlanner, orchestrator.AgentExecutor, orchestrator.AgentVerifier}
+	agents = make([]orchestrator.AgentState, len(roles))
+	for i, role := range roles {
+		sessName := fmt.Sprintf("ma-%s-%d", string(role), time.Now().UnixNano())
+		if err := tmux.EnsureClaudeSession(sessName, workDir, command); err != nil {
+			t.Fatalf("EnsureClaudeSession for %s: %v", role, err)
+		}
+		time.Sleep(300 * time.Millisecond)
+		agents[i] = orchestrator.AgentState{
+			Role:    role,
+			Session: sessName,
+		}
+	}
+
+	t.Cleanup(func() {
+		exec.Command("tmux", "-L", socket, "kill-server").Run()
+		tmux.Socket = origSocket
+		tmux.PollInterval = origPoll
+		tmux.StableWindow = origStable
+		tmux.StartupSettleWindow = origSettle
+	})
+
+	return agents, workDir, command
+}
+
+// The multi-agent loop sends a directive to an agent and terminates on TASK_COMPLETE.
+func TestIntegration_MultiAgentLoop_CompletesTask(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	callCount := 0
+	marker := fmt.Sprintf("MACOMPLETE_%d", time.Now().UnixNano())
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			respondJSON(w, fmt.Sprintf(`{"agent":"executor","message":"echo %s"}`, marker), callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 10)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "multi-agent test", nil, nil)
+
+	if callCount < 2 {
+		t.Fatalf("expected at least 2 API calls, got %d", callCount)
+	}
+
+	// Wait for the in-flight goroutine to deliver the echo command.
+	time.Sleep(2 * time.Second)
+
+	// Verify marker appeared in the executor's pane.
+	pane, err := tmux.CapturePane(agents[1].Session) // executor is index 1
+	if err != nil {
+		t.Fatalf("CapturePane for executor: %v", err)
+	}
+	if !strings.Contains(pane, marker) {
+		t.Fatalf("marker %q not in executor pane:\n%s", marker, pane)
+	}
+}
+
+// Messages are routed to the correct agent based on the directive.
+func TestIntegration_MultiAgentLoop_RoutesToCorrectAgent(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	plannerMarker := fmt.Sprintf("PLAN_%d", time.Now().UnixNano())
+	executorMarker := fmt.Sprintf("EXEC_%d", time.Now().UnixNano())
+	verifierMarker := fmt.Sprintf("VERI_%d", time.Now().UnixNano())
+
+	callCount := 0
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			respondJSON(w, fmt.Sprintf(`{"agent":"planner","message":"echo %s"}`, plannerMarker), callCount)
+		case 2:
+			respondJSON(w, fmt.Sprintf(`{"agent":"executor","message":"echo %s"}`, executorMarker), callCount)
+		case 3:
+			respondJSON(w, fmt.Sprintf(`{"agent":"verifier","message":"echo %s"}`, verifierMarker), callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 10)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "routing test", nil, nil)
+
+	// Check each agent's pane for its unique marker.
+	for i, expected := range []struct {
+		name   string
+		marker string
+	}{
+		{"planner", plannerMarker},
+		{"executor", executorMarker},
+		{"verifier", verifierMarker},
+	} {
+		pane, err := tmux.CapturePane(agents[i].Session)
+		if err != nil {
+			t.Fatalf("CapturePane for %s: %v", expected.name, err)
+		}
+		if !strings.Contains(pane, expected.marker) {
+			t.Fatalf("marker %q not in %s pane:\n%s", expected.marker, expected.name, pane)
+		}
+	}
+}
+
+// Invalid JSON from LLM triggers error recovery and self-corrects.
+func TestIntegration_MultiAgentLoop_InvalidJSONRecovery(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	marker := fmt.Sprintf("JSONFIX_%d", time.Now().UnixNano())
+	callCount := 0
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			// Invalid JSON
+			respondJSON(w, "I think I should analyze the code first", callCount)
+		case 2:
+			// Corrected JSON
+			respondJSON(w, fmt.Sprintf(`{"agent":"executor","message":"echo %s"}`, marker), callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 10)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "json recovery test", nil, nil)
+
+	// Wait for the in-flight goroutine to deliver the echo command.
+	time.Sleep(2 * time.Second)
+
+	// Should have recovered and executed the correct command.
+	pane, err := tmux.CapturePane(agents[1].Session)
+	if err != nil {
+		t.Fatalf("CapturePane for executor: %v", err)
+	}
+	if !strings.Contains(pane, marker) {
+		t.Fatalf("marker %q not in executor pane after recovery:\n%s", marker, pane)
+	}
+}
+
+// Unknown agent name triggers error recovery.
+func TestIntegration_MultiAgentLoop_UnknownAgentRecovery(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	marker := fmt.Sprintf("UNKNFIX_%d", time.Now().UnixNano())
+	callCount := 0
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			// Unknown agent
+			respondJSON(w, `{"agent":"debugger","message":"run debugger"}`, callCount)
+		case 2:
+			// Corrected to valid agent
+			respondJSON(w, fmt.Sprintf(`{"agent":"planner","message":"echo %s"}`, marker), callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 10)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "unknown agent test", nil, nil)
+
+	// Wait for the in-flight goroutine to deliver the echo command.
+	time.Sleep(2 * time.Second)
+
+	pane, err := tmux.CapturePane(agents[0].Session)
+	if err != nil {
+		t.Fatalf("CapturePane for planner: %v", err)
+	}
+	if !strings.Contains(pane, marker) {
+		t.Fatalf("marker %q not in planner pane after recovery:\n%s", marker, pane)
+	}
+}
+
+// Busy agent message is queued and the LLM is informed. Verifies that the
+// queuing mechanism correctly detects busy agents and feeds back a "queued"
+// message to the LLM. Delivery of the queued message is timing-dependent
+// so we verify the mechanism rather than pane output.
+func TestIntegration_MultiAgentLoop_BusyAgentQueuing(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	marker1 := fmt.Sprintf("BUSY1_%d", time.Now().UnixNano())
+	marker2 := fmt.Sprintf("BUSY2_%d", time.Now().UnixNano())
+	callCount := 0
+	var capturedMessages [][]orchestrator.Message
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		var req orchestrator.Request
+		json.NewDecoder(r.Body).Decode(&req)
+		callCount++
+		snapshot := make([]orchestrator.Message, len(req.Messages))
+		copy(snapshot, req.Messages)
+		capturedMessages = append(capturedMessages, snapshot)
+
+		switch callCount {
+		case 1:
+			// Send a command to executor.
+			respondJSON(w, fmt.Sprintf(`{"agent":"executor","message":"echo %s"}`, marker1), callCount)
+		case 2:
+			// Try to send to executor again immediately (will be queued if still busy).
+			respondJSON(w, fmt.Sprintf(`{"agent":"executor","message":"echo %s"}`, marker2), callCount)
+		case 3:
+			// Address planner.
+			respondJSON(w, `{"agent":"planner","message":"echo plan"}`, callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 10)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "busy queue test", nil, nil)
+
+	// The test verifies the queuing mechanism: either (a) the message was
+	// queued because executor was busy, or (b) both messages went through
+	// directly because executor completed fast. Both are valid outcomes.
+	foundQueueMsg := false
+	foundMarker1Output := false
+	for _, msgs := range capturedMessages {
+		for _, msg := range msgs {
+			if msg.Role == "user" && strings.Contains(msg.Content, "queued") {
+				foundQueueMsg = true
+			}
+			if msg.Role == "user" && strings.Contains(msg.Content, marker1) {
+				foundMarker1Output = true
+			}
+		}
+	}
+	// Either the message was queued OR the first command completed and its
+	// output was fed back (both prove the agent routing works).
+	if !foundQueueMsg && !foundMarker1Output {
+		t.Fatal("expected either queue feedback or marker1 output in conversation")
+	}
+
+	// Wait for in-flight goroutines.
+	time.Sleep(2 * time.Second)
+
+	// Marker1 should be in executor pane.
+	pane, err := tmux.CapturePane(agents[1].Session)
+	if err != nil {
+		t.Fatalf("CapturePane for executor: %v", err)
+	}
+	if !strings.Contains(pane, marker1) {
+		t.Fatalf("marker1 %q not in executor pane:\n%s", marker1, pane)
+	}
+}
+
+// Max iterations is respected in multi-agent mode.
+func TestIntegration_MultiAgentLoop_MaxIterations(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	callCount := 0
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		respondJSON(w, fmt.Sprintf(`{"agent":"executor","message":"echo iter %d"}`, callCount), callCount)
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 3)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "max iter test", nil, nil)
+
+	if callCount != 3 {
+		t.Fatalf("expected exactly 3 API calls (maxIterations=3), got %d", callCount)
+	}
+}
+
+// SSE events in multi-agent mode include the agent field.
+func TestIntegration_MultiAgentLoop_SSEEventsIncludeAgent(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	callCount := 0
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			respondJSON(w, `{"agent":"planner","message":"echo plan"}`, callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 10)
+
+	broker := dashboard.NewSSEBroker()
+	ch, unsub := broker.Subscribe()
+	defer unsub()
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "SSE agent test", broker, nil)
+
+	var events []dashboard.IterationEvent
+	for {
+		select {
+		case msg := <-ch:
+			payload := strings.TrimPrefix(strings.TrimSpace(msg), "data: ")
+			var evt dashboard.IterationEvent
+			if err := json.Unmarshal([]byte(payload), &evt); err == nil {
+				events = append(events, evt)
+			}
+		default:
+			goto collected
+		}
+	}
+collected:
+
+	// Find iteration_end events with agent field.
+	foundAgentEvent := false
+	foundModeEvent := false
+	for _, evt := range events {
+		if evt.Agent == "planner" {
+			foundAgentEvent = true
+		}
+		if evt.Mode == "multi-agent" {
+			foundModeEvent = true
+		}
+	}
+	if !foundAgentEvent {
+		t.Fatal("no SSE event with agent='planner' found")
+	}
+	if !foundModeEvent {
+		t.Fatal("no SSE event with mode='multi-agent' found")
+	}
+}
+
+// MEMORY_SAVE is persisted across agents in multi-agent mode.
+func TestIntegration_MultiAgentLoop_SharedMemory(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	callCount := 0
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch callCount {
+		case 1:
+			respondJSON(w, "MEMORY_SAVE: project uses Go 1.23\n"+`{"agent":"executor","message":"echo hello"}`, callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 10)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "memory test", nil, nil)
+
+	facts, err := memory.LoadMemory(workDir)
+	if err != nil {
+		t.Fatalf("LoadMemory: %v", err)
+	}
+	if len(facts) != 1 || facts[0] != "project uses Go 1.23" {
+		t.Fatalf("unexpected memory facts: %v", facts)
+	}
+}
+
+// Multi-agent mode uses the provided agentName, not hardcoded "Claude Code".
+func TestIntegration_MultiAgentLoop_AgentNameAgnostic(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	var capturedSystemPrompt string
+	callCount := 0
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		var req orchestrator.Request
+		json.NewDecoder(r.Body).Decode(&req)
+		callCount++
+		if callCount == 1 && len(req.Messages) > 0 && req.Messages[0].Role == "system" {
+			capturedSystemPrompt = req.Messages[0].Content
+		}
+		respondJSON(w, "TASK_COMPLETE", callCount)
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 5)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "CustomAgent", "test-agent-model", "agnostic test", nil, nil)
+
+	if !strings.Contains(capturedSystemPrompt, "CustomAgent") {
+		t.Fatal("system prompt should reference 'CustomAgent'")
+	}
+	if strings.Contains(capturedSystemPrompt, "Claude Code") {
+		t.Fatal("system prompt should not contain 'Claude Code' when agentName='CustomAgent'")
+	}
+}
+
+// Queue full rejection: busy agent with existing queue rejects a second message.
+func TestIntegration_MultiAgentLoop_QueueFullRejection(t *testing.T) {
+	agents, workDir, command := setupMultiAgentIntegration(t)
+
+	callCount := 0
+	var capturedMessages [][]orchestrator.Message
+
+	srv := mockOpenRouter(func(w http.ResponseWriter, r *http.Request) {
+		var req orchestrator.Request
+		json.NewDecoder(r.Body).Decode(&req)
+		callCount++
+		snapshot := make([]orchestrator.Message, len(req.Messages))
+		copy(snapshot, req.Messages)
+		capturedMessages = append(capturedMessages, snapshot)
+
+		switch callCount {
+		case 1:
+			// Send a long-running command to planner (sleep)
+			respondJSON(w, `{"agent":"planner","message":"sleep 5 && echo done"}`, callCount)
+		case 2:
+			// Immediately try to send to planner again (should queue)
+			respondJSON(w, `{"agent":"planner","message":"echo queued"}`, callCount)
+		case 3:
+			// Try a third message to planner (should be rejected — queue full)
+			respondJSON(w, `{"agent":"planner","message":"echo rejected"}`, callCount)
+		case 4:
+			// Address a different agent as instructed
+			respondJSON(w, `{"agent":"executor","message":"echo fallback"}`, callCount)
+		default:
+			respondJSON(w, "TASK_COMPLETE", callCount)
+		}
+	})
+	defer srv.Close()
+
+	setupAutonomous(t, srv.URL, 10)
+
+	orchestrator.MultiAgentLoop(agents, workDir, command, "test-key", "test-model", "TestAgent", "test-agent-model", "queue full test", nil, nil)
+
+	// Verify the LLM received a "queue full" rejection message.
+	foundQueueFull := false
+	for _, msgs := range capturedMessages {
+		for _, msg := range msgs {
+			if msg.Role == "user" && strings.Contains(msg.Content, "already has a queued message") {
+				foundQueueFull = true
+				break
+			}
+		}
+	}
+	if !foundQueueFull {
+		t.Fatal("LLM should have received a queue-full rejection message")
 	}
 }

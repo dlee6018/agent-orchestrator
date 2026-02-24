@@ -69,11 +69,6 @@ func main() {
 		}
 	}
 
-	if err := tmux.EnsureClaudeSession(session, workDir, command); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to prepare session: %v\n", err)
-		os.Exit(1)
-	}
-
 	terminateOnQuit := helpers.EnvBool("TERMINATE_WHEN_QUIT", false)
 
 	if helpers.EnvBool("AUTONOMOUS_MODE", true) {
@@ -83,6 +78,12 @@ func main() {
 			os.Exit(1)
 		}
 		model := helpers.EnvOrDefault("OPENROUTER_MODEL", orchestrator.DefaultModel)
+		orchestrator.Provider = helpers.EnvOrDefault("OPENROUTER_PROVIDER", orchestrator.Provider)
+		// Force Bedrock provider when DEFAULT_MODEL starts with "bedrock".
+		if strings.HasPrefix(strings.ToLower(defaultModel), "bedrock") && os.Getenv("OPENROUTER_PROVIDER") == "" {
+			orchestrator.Provider = "amazon-bedrock"
+			fmt.Printf("Auto-detected Bedrock model (%s), setting provider to amazon-bedrock\n", defaultModel)
+		}
 		if v := os.Getenv("MAX_ITERATIONS"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				orchestrator.MaxIterations = n
@@ -136,27 +137,72 @@ func main() {
 			}
 		}
 
-		runWithCleanup(session, terminateOnQuit, func() {
-			orchestrator.AutonomousLoop(session, workDir, command, apiKey, model, task, agentName, broker, memories)
-		})
+		if helpers.EnvBool("MULTI_AGENT_MODE", false) {
+			if v := os.Getenv("CONTEXT_SUMMARY_THRESHOLD"); v != "" {
+				if n, err := strconv.Atoi(v); err == nil && n > 0 {
+					orchestrator.ContextSummaryThreshold = n
+				}
+			}
+			if v := os.Getenv("CONTEXT_KEEP_RECENT"); v != "" {
+				if n, err := strconv.Atoi(v); err == nil && n > 0 {
+					orchestrator.ContextKeepRecent = n
+				}
+			}
+			// Create 3 tmux sessions: {session}-planner, {session}-executor, {session}-verifier
+			roles := []orchestrator.AgentRole{orchestrator.AgentPlanner, orchestrator.AgentExecutor, orchestrator.AgentVerifier}
+			agents := make([]orchestrator.AgentState, len(roles))
+			sessions := make([]string, len(roles))
+			for i, role := range roles {
+				sessName := fmt.Sprintf("%s-%s", session, string(role))
+				sessions[i] = sessName
+				if err := tmux.EnsureClaudeSession(sessName, workDir, command); err != nil {
+					fmt.Fprintf(os.Stderr, "failed to prepare %s session: %v\n", role, err)
+					os.Exit(1)
+				}
+				agents[i] = orchestrator.AgentState{
+					Role:    role,
+					Session: sessName,
+				}
+			}
+			runWithCleanup(sessions, terminateOnQuit, func() {
+				orchestrator.MultiAgentLoop(agents, workDir, command, apiKey, model, agentName, defaultModel, task, broker, memories)
+			})
+		} else {
+			if err := tmux.EnsureClaudeSession(session, workDir, command); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to prepare session: %v\n", err)
+				os.Exit(1)
+			}
+			runWithCleanup([]string{session}, terminateOnQuit, func() {
+				orchestrator.AutonomousLoop(session, workDir, command, apiKey, model, task, agentName, defaultModel, broker, memories)
+			})
+		}
 	} else {
+		if err := tmux.EnsureClaudeSession(session, workDir, command); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to prepare session: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Printf("Session %q is ready. Type messages and press Enter. Use /quit to exit.\n", session)
-		runWithCleanup(session, terminateOnQuit, func() {
+		runWithCleanup([]string{session}, terminateOnQuit, func() {
 			chatLoop(session, workDir, command)
 		})
 	}
 }
 
 // runWithCleanup runs fn, optionally registering signal handlers and session cleanup.
-func runWithCleanup(session string, terminate bool, fn func()) {
+// sessions is a list of tmux session names to clean up (supports both single and multi-agent modes).
+func runWithCleanup(sessions []string, terminate bool, fn func()) {
 	if terminate {
-		cleanup := func() { tmux.CleanupSession(session) }
+		cleanup := func() {
+			for _, s := range sessions {
+				tmux.CleanupSession(s)
+			}
+		}
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		go func() {
 			<-sigCh
-			fmt.Fprintln(os.Stderr, "\nsignal received, cleaning up tmux session...")
+			fmt.Fprintln(os.Stderr, "\nsignal received, cleaning up tmux session(s)...")
 			cleanup()
 			os.Exit(0)
 		}()

@@ -19,6 +19,7 @@ The inner coding agent is selected via `DEFAULT_MODEL`: models starting with `gp
 | `dashboard/` | SSE broker + embedded web dashboard (`dashboard/web/`) |
 | `orchestrator/` | Autonomous loop + OpenRouter API — `AutonomousLoop`, `MultiAgentLoop`, `CallOpenRouter`, `BuildSystemPrompt`, `BuildMultiAgentSystemPrompt`, API types |
 | `memory/` | Persistent memory — load/save `memory.json`, extract `MEMORY_SAVE:` lines, deduplication, compaction |
+| `config/` | Interactive `/setup` wizard and persistent `config.json` management — `ConfigDir`, `LoadConfig`, `SaveConfig`, `ApplyConfig`, `RunSetupWizard` |
 
 ### Test Files
 
@@ -29,6 +30,7 @@ The inner coding agent is selected via `DEFAULT_MODEL`: models starting with `gp
 | `dashboard/dashboard_test.go` | SSE broker pub/sub, replay, unsubscribe, slow clients, event JSON, dashboard HTTP serving |
 | `orchestrator/orchestrator_test.go` | System prompt building, OpenRouter API client (mock server tests), multi-agent directive parsing, agent lookup, multi-agent prompt, context summarization |
 | `memory/memory_test.go` | Memory load/save round-trip, `ExtractMemorySaves`, deduplication, compaction |
+| `config/config_test.go` | Config load/save round-trip, ApplyConfig env vars, RunSetupWizard (happy path, invalid input, EOF) |
 | `main_test.go` (root) | `ResolveAgentConfig` integration with main, `CLAUDE_CMD` override logic |
 | `integration_test.go` (root) | All cross-package integration tests: real tmux session lifecycle, autonomous loop with mock OpenRouter, SSE events, persistent memory, multi-agent loop (routing, queuing, recovery, SSE) |
 
@@ -37,6 +39,7 @@ The inner coding agent is selected via `DEFAULT_MODEL`: models starting with `gp
 - `dashboard/web/` — Embedded web dashboard assets (compiled into the binary via `//go:embed`)
 - `go.mod` — Go 1.23, module `github.com/dlee6018/agent-orchestrator`, no external dependencies
 - `.env` — Runtime env vars (contains `TERMINATE_WHEN_QUIT=true`)
+- `~/.config/go-orchestrator/config.json` — Persistent user settings from `/setup` wizard (global, not per-project; highest precedence, overrides `.env`)
 - `README.md` — Project readme
 
 ## Dependency Graph (acyclic)
@@ -46,8 +49,9 @@ helpers  (no deps)
 tmux     (no deps)
 dashboard (no deps)
 memory   (no deps — uses CompactFunc callback)
+config   (no deps)
 orchestrator → tmux, memory, dashboard
-main → helpers, tmux, dashboard, memory, orchestrator
+main → helpers, tmux, dashboard, memory, orchestrator, config
 ```
 
 ## Environment Variables

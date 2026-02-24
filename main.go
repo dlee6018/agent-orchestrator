@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/dlee6018/agent-orchestrator/config"
 	"github.com/dlee6018/agent-orchestrator/dashboard"
 	"github.com/dlee6018/agent-orchestrator/helpers"
 	"github.com/dlee6018/agent-orchestrator/memory"
@@ -24,6 +25,16 @@ const (
 
 // main resolves config from env vars, sets up the tmux session, and enters the appropriate loop.
 func main() {
+	// Load config.json (user's /setup choices) from global config dir — highest precedence.
+	if cfgDir, cfgDirErr := config.ConfigDir(); cfgDirErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not determine config directory: %v\n", cfgDirErr)
+	} else if cfg, cfgErr := config.LoadConfig(cfgDir); cfgErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to load config.json: %v\n", cfgErr)
+	} else if cfg != nil {
+		config.ApplyConfig(cfg)
+		fmt.Println("Loaded settings from config.json")
+	}
+
 	if err := helpers.LoadEnvFile(".env"); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to load .env: %v\n", err)
 	}
@@ -72,6 +83,29 @@ func main() {
 	terminateOnQuit := helpers.EnvBool("TERMINATE_WHEN_QUIT", false)
 
 	if helpers.EnvBool("AUTONOMOUS_MODE", true) {
+		fmt.Print("Press /setup to setup first. \n")
+		fmt.Print("Enter task description: ")
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+		if !scanner.Scan() {
+			fmt.Fprintln(os.Stderr, "no task provided")
+			os.Exit(1)
+		}
+		task := strings.TrimSpace(scanner.Text())
+		if task == "" {
+			fmt.Fprintln(os.Stderr, "empty task")
+			os.Exit(1)
+		}
+
+		// Handle /setup before requiring API key.
+		if task == "/setup" {
+			if err := handleSetup(scanner); err != nil {
+				fmt.Fprintf(os.Stderr, "setup failed: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
 		apiKey := os.Getenv("OPENROUTER_API_KEY")
 		if apiKey == "" {
 			fmt.Fprintln(os.Stderr, "OPENROUTER_API_KEY is required in autonomous mode")
@@ -93,19 +127,6 @@ func main() {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				memory.MaxFacts = n
 			}
-		}
-
-		fmt.Print("Enter task description: ")
-		scanner := bufio.NewScanner(os.Stdin)
-		scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-		if !scanner.Scan() {
-			fmt.Fprintln(os.Stderr, "no task provided")
-			os.Exit(1)
-		}
-		task := strings.TrimSpace(scanner.Text())
-		if task == "" {
-			fmt.Fprintln(os.Stderr, "empty task")
-			os.Exit(1)
 		}
 
 		memories, memErr := memory.LoadMemory(workDir)
@@ -234,6 +255,12 @@ func chatLoop(session, workDir, command string) {
 		if message == "/quit" {
 			return
 		}
+		if message == "/setup" {
+			if err := handleSetup(scanner); err != nil {
+				fmt.Fprintf(os.Stderr, "setup failed: %v\n", err)
+			}
+			return
+		}
 
 		pane, err := tmux.SendAndCaptureWithRecovery(session, workDir, command, message, lastPane)
 		if err != nil {
@@ -246,4 +273,22 @@ func chatLoop(session, workDir, command string) {
 		fmt.Println("----- end output -----")
 		lastPane = pane
 	}
+}
+
+// handleSetup runs the interactive /setup wizard and saves the result to the global config directory.
+// Returns an error instead of calling os.Exit so callers can perform cleanup (e.g. tmux sessions).
+func handleSetup(scanner *bufio.Scanner) error {
+	cfg, err := config.RunSetupWizard(scanner, os.Stdout)
+	if err != nil {
+		return fmt.Errorf("handleSetup: wizard: %w", err)
+	}
+	cfgDir, err := config.ConfigDir()
+	if err != nil {
+		return fmt.Errorf("handleSetup: config dir: %w", err)
+	}
+	if err := config.SaveConfig(cfgDir, cfg); err != nil {
+		return fmt.Errorf("handleSetup: save: %w", err)
+	}
+	fmt.Printf("Configuration saved to %s. Restart to apply.\n", filepath.Join(cfgDir, config.FileName))
+	return nil
 }

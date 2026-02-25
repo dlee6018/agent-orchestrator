@@ -18,12 +18,11 @@ const FileName = "config.json"
 // All fields are strings because they map directly to env var values
 // and are consumed by helpers.EnvBool/helpers.EnvOrDefault.
 type Config struct {
-	DefaultModel      string `json:"default_model"`
-	OpenRouterModel   string `json:"openrouter_model"`
-	DashboardEnabled  string `json:"dashboard_enabled"`
-	MultiAgentMode    string `json:"multi_agent_mode"`
-	TerminateWhenQuit string `json:"terminate_when_quit"`
-	AutonomousMode    string `json:"autonomous_mode"`
+	DefaultModel     string `json:"default_model"`
+	OpenRouterModel  string `json:"openrouter_model"`
+	DashboardEnabled string `json:"dashboard_enabled"`
+	MultiAgentMode   string `json:"multi_agent_mode"`
+	AutonomousMode   string `json:"autonomous_mode"`
 }
 
 // question describes a single wizard prompt with its numbered choices.
@@ -39,7 +38,6 @@ var wizardQuestions = []question{
 	{"Select orchestrator LLM model", "OPENROUTER_MODEL", []string{"anthropic/claude-opus-4.6"}},
 	{"Enable web dashboard", "DASHBOARD_ENABLED", []string{"true", "false"}},
 	{"Enable multi-agent mode", "MULTI_AGENT_MODE", []string{"true", "false"}},
-	{"Kill tmux session on /quit or signal", "TERMINATE_WHEN_QUIT", []string{"true", "false"}},
 	{"Enable autonomous mode", "AUTONOMOUS_MODE", []string{"true", "false"}},
 }
 
@@ -103,7 +101,6 @@ func ApplyConfig(cfg *Config) {
 		{"OPENROUTER_MODEL", cfg.OpenRouterModel},
 		{"DASHBOARD_ENABLED", cfg.DashboardEnabled},
 		{"MULTI_AGENT_MODE", cfg.MultiAgentMode},
-		{"TERMINATE_WHEN_QUIT", cfg.TerminateWhenQuit},
 		{"AUTONOMOUS_MODE", cfg.AutonomousMode},
 	}
 	for _, p := range pairs {
@@ -130,12 +127,11 @@ func RunSetupWizard(scanner *bufio.Scanner, w io.Writer) (*Config, error) {
 	}
 
 	cfg := &Config{
-		DefaultModel:      answers[0],
-		OpenRouterModel:   answers[1],
-		DashboardEnabled:  answers[2],
-		MultiAgentMode:    answers[3],
-		TerminateWhenQuit: answers[4],
-		AutonomousMode:    answers[5],
+		DefaultModel:     answers[0],
+		OpenRouterModel:  answers[1],
+		DashboardEnabled: answers[2],
+		MultiAgentMode:   answers[3],
+		AutonomousMode:   answers[4],
 	}
 	return cfg, nil
 }

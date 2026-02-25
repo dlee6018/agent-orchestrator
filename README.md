@@ -38,6 +38,20 @@ In chat mode, type a message and press Enter to send it to the agent. Type `/qui
 
 In autonomous mode, enter a task description when prompted. The orchestrator LLM will drive the coding agent until it signals `TASK_COMPLETE`.
 
+## Viewing tmux sessions
+
+The orchestrator runs tmux on a **custom socket** (`gt-claude-loop` by default), so sessions won't appear in a plain `tmux ls`. Use the `-L` flag to target the correct socket:
+
+```bash
+# List sessions
+tmux -L gt-claude-loop ls
+
+# Attach to watch the agent work (detach with Ctrl+B then D)
+tmux -L gt-claude-loop attach -t gt-claude-loop
+```
+
+If you've overridden `CLAUDE_TMUX_SOCKET` or `CLAUDE_TMUX_SESSION`, substitute your values accordingly.
+
 ## Environment variables
 
 | Variable | Default | Description |

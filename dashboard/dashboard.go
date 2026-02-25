@@ -19,23 +19,35 @@ var webContent embed.FS
 
 // IterationEvent represents an SSE event payload for the web dashboard.
 type IterationEvent struct {
-	Type         string      `json:"type"` // "task_info", "iteration_start", "iteration_end", "error", "complete"
-	Iteration    int         `json:"iteration"`
-	MaxIter      int         `json:"max_iter"`
-	Timestamp    string      `json:"timestamp"`
-	DurationMs   int64       `json:"duration_ms,omitempty"`
-	Tokens       *TokenUsage `json:"tokens,omitempty"`
-	Orchestrator string      `json:"orchestrator,omitempty"`
-	ClaudeOutput string      `json:"claude_output,omitempty"`
-	AgentOutput  string      `json:"agent_output,omitempty"`
-	MemoryFacts  []string    `json:"memory_facts,omitempty"`
-	Error        string      `json:"error,omitempty"`
-	Task         string      `json:"task,omitempty"`
-	Model        string      `json:"model,omitempty"`         // orchestrator LLM model (OPENROUTER_MODEL)
-	AgentModel   string      `json:"agent_model,omitempty"`   // inner coding agent model (DEFAULT_MODEL)
-	Agent        string      `json:"agent,omitempty"`         // which agent was addressed (multi-agent mode)
-	Mode         string      `json:"mode,omitempty"`  // "multi-agent" when applicable
+	Type         string               `json:"type"` // "task_info", "iteration_start", "iteration_end", "error", "complete", "health_status"
+	Iteration    int                  `json:"iteration"`
+	MaxIter      int                  `json:"max_iter"`
+	Timestamp    string               `json:"timestamp"`
+	DurationMs   int64                `json:"duration_ms,omitempty"`
+	Tokens       *TokenUsage          `json:"tokens,omitempty"`
+	Orchestrator string               `json:"orchestrator,omitempty"`
+	ClaudeOutput string               `json:"claude_output,omitempty"`
+	AgentOutput  string               `json:"agent_output,omitempty"`
+	MemoryFacts  []string             `json:"memory_facts,omitempty"`
+	Error        string               `json:"error,omitempty"`
+	Task         string               `json:"task,omitempty"`
+	Model        string               `json:"model,omitempty"`       // orchestrator LLM model (OPENROUTER_MODEL)
+	AgentModel   string               `json:"agent_model,omitempty"` // inner coding agent model (DEFAULT_MODEL)
+	Agent        string               `json:"agent,omitempty"`       // which agent was addressed (multi-agent mode)
+	Mode         string               `json:"mode,omitempty"`        // "multi-agent" when applicable
+	Agents       []AgentHealthStatus  `json:"agents,omitempty"`      // per-agent health (health_status events)
 }
+
+// AgentHealthStatus describes the health of a single agent session.
+type AgentHealthStatus struct {
+	Role       string `json:"role"`
+	Session    string `json:"session"`
+	Alive      bool   `json:"alive"`
+	ExitStatus int    `json:"exit_status"`
+}
+
+// RestartFunc is a callback that restarts a dead tmux session.
+type RestartFunc func(session string) error
 
 // TokenUsage tracks prompt, completion, and total token counts.
 type TokenUsage struct {
@@ -45,12 +57,13 @@ type TokenUsage struct {
 }
 
 // SSEBroker manages fan-out of SSE events to multiple connected clients.
-// It retains the last task_info payload so late-connecting clients (or
-// reconnects) immediately receive the current task metadata.
+// It retains the last task_info and health_status payloads so late-connecting
+// clients (or reconnects) immediately receive the current metadata.
 type SSEBroker struct {
-	mu           sync.Mutex
-	clients      []chan string
-	lastTaskInfo string // SSE payload for the most recent task_info event
+	mu               sync.Mutex
+	clients          []chan string
+	lastTaskInfo     string // SSE payload for the most recent task_info event
+	lastHealthStatus string // SSE payload for the most recent health_status event
 }
 
 // NewSSEBroker creates a new SSEBroker instance.
@@ -67,7 +80,14 @@ func (b *SSEBroker) Subscribe() (<-chan string, func()) {
 	// Replay the last task_info so late joiners see the task metadata.
 	if b.lastTaskInfo != "" {
 		select {
-		case ch <- b.lastTaskInfo: // non-blocking, may drop if not available
+		case ch <- b.lastTaskInfo:
+		default:
+		}
+	}
+	// Replay the last health_status so late joiners see agent health.
+	if b.lastHealthStatus != "" {
+		select {
+		case ch <- b.lastHealthStatus:
 		default:
 		}
 	}
@@ -102,6 +122,9 @@ func (b *SSEBroker) Publish(event IterationEvent) {
 	if event.Type == "task_info" {
 		b.lastTaskInfo = payload
 	}
+	if event.Type == "health_status" {
+		b.lastHealthStatus = payload
+	}
 	for _, ch := range b.clients {
 		select {
 		case ch <- payload:
@@ -111,8 +134,9 @@ func (b *SSEBroker) Publish(event IterationEvent) {
 }
 
 // StartDashboard starts the web dashboard HTTP server.
+// restartFn is an optional callback to restart a dead tmux session (may be nil).
 // It returns the address the server is listening on.
-func StartDashboard(broker *SSEBroker, port int) (string, error) {
+func StartDashboard(broker *SSEBroker, port int, restartFn RestartFunc) (string, error) {
 	mux := http.NewServeMux()
 
 	webFS, err := fs.Sub(webContent, "web")
@@ -151,6 +175,29 @@ func StartDashboard(broker *SSEBroker, port int) (string, error) {
 				return
 			}
 		}
+	})
+
+	// POST /api/restart?session=<name> restarts a dead agent session.
+	mux.HandleFunc("/api/restart", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		session := r.URL.Query().Get("session")
+		if session == "" {
+			http.Error(w, "missing session parameter", http.StatusBadRequest)
+			return
+		}
+		if restartFn == nil {
+			http.Error(w, "restart not available", http.StatusServiceUnavailable)
+			return
+		}
+		if err := restartFn(session); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "restarted %s", session)
 	})
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)

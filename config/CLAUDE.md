@@ -16,7 +16,7 @@ Interactive setup wizard and persistent config file (`config.json`) management. 
 
 | Type | Description |
 |---|---|
-| `Config` | Struct with string fields mapping to env vars: `DefaultModel`, `OpenRouterModel`, `DashboardEnabled`, `MultiAgentMode`, `TerminateWhenQuit`, `AutonomousMode` |
+| `Config` | Struct with string fields mapping to env vars: `DefaultModel`, `OpenRouterModel`, `DashboardEnabled`, `MultiAgentMode`, `AutonomousMode` |
 
 ### Functions
 
@@ -26,7 +26,7 @@ Interactive setup wizard and persistent config file (`config.json`) management. 
 | `LoadConfig(dir)` | Reads config.json from dir, returns parsed Config (nil if file missing) |
 | `SaveConfig(dir, cfg)` | Writes Config as pretty-printed JSON to config.json (creates dir if needed) |
 | `ApplyConfig(cfg)` | Sets env vars via `os.Setenv` for each non-empty field |
-| `RunSetupWizard(scanner, w)` | Interactive numbered-choice wizard (6 questions), returns completed Config |
+| `RunSetupWizard(scanner, w)` | Interactive numbered-choice wizard (5 questions), returns completed Config |
 
 ## Key Implementation Details
 

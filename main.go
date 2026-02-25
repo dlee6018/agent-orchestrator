@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/dlee6018/agent-orchestrator/config"
 	"github.com/dlee6018/agent-orchestrator/dashboard"
@@ -22,6 +23,9 @@ const (
 	defaultSession = "gt-claude-loop"
 	defaultSocket  = "gt-claude-loop"
 )
+
+// HealthPollInterval is how often the health poller checks agent sessions.
+var HealthPollInterval = 5 * time.Second
 
 // main resolves config from env vars, sets up the tmux session, and enters the appropriate loop.
 func main() {
@@ -79,8 +83,6 @@ func main() {
 			os.Exit(1)
 		}
 	}
-
-	terminateOnQuit := helpers.EnvBool("TERMINATE_WHEN_QUIT", false)
 
 	if helpers.EnvBool("AUTONOMOUS_MODE", true) {
 		fmt.Print("Press /setup to setup first. \n")
@@ -145,7 +147,10 @@ func main() {
 					dashPort = n
 				}
 			}
-			addr, dashErr := dashboard.StartDashboard(broker, dashPort)
+			restartFn := func(session string) error {
+				return tmux.EnsureClaudeSession(session, workDir, command)
+			}
+			addr, dashErr := dashboard.StartDashboard(broker, dashPort, restartFn)
 			if dashErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to start dashboard: %v\n", dashErr)
 				broker = nil
@@ -185,7 +190,13 @@ func main() {
 					Session: sessName,
 				}
 			}
-			runWithCleanup(sessions, terminateOnQuit, func() {
+			roleNames := make([]string, len(roles))
+			for i, r := range roles {
+				roleNames[i] = string(r)
+			}
+			stopHealth := startHealthPoller(sessions, roleNames, broker)
+			runWithCleanup(sessions, func() {
+				defer stopHealth()
 				orchestrator.MultiAgentLoop(agents, workDir, command, apiKey, model, agentName, defaultModel, task, broker, memories)
 			})
 		} else {
@@ -193,7 +204,9 @@ func main() {
 				fmt.Fprintf(os.Stderr, "failed to prepare session: %v\n", err)
 				os.Exit(1)
 			}
-			runWithCleanup([]string{session}, terminateOnQuit, func() {
+			stopHealth := startHealthPoller([]string{session}, []string{"agent"}, broker)
+			runWithCleanup([]string{session}, func() {
+				defer stopHealth()
 				orchestrator.AutonomousLoop(session, workDir, command, apiKey, model, task, agentName, defaultModel, broker, memories)
 			})
 		}
@@ -203,36 +216,72 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("Session %q is ready. Type messages and press Enter. Use /quit to exit.\n", session)
-		runWithCleanup([]string{session}, terminateOnQuit, func() {
+		runWithCleanup([]string{session}, func() {
 			chatLoop(session, workDir, command)
 		})
 	}
 }
 
-// runWithCleanup runs fn, optionally registering signal handlers and session cleanup.
+// runWithCleanup runs fn with signal handlers and session cleanup.
 // sessions is a list of tmux session names to clean up (supports both single and multi-agent modes).
-func runWithCleanup(sessions []string, terminate bool, fn func()) {
-	if terminate {
-		cleanup := func() {
-			for _, s := range sessions {
-				tmux.CleanupSession(s)
+func runWithCleanup(sessions []string, fn func()) {
+	cleanup := func() {
+		for _, s := range sessions {
+			tmux.CleanupSession(s)
+		}
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Fprintln(os.Stderr, "\nsignal received, cleaning up tmux session(s)...")
+		cleanup()
+		os.Exit(0)
+	}()
+
+	fn()
+	cleanup()
+}
+
+// startHealthPoller starts a goroutine that periodically checks agent session health
+// and publishes health_status events to the SSE broker. Returns a stop function.
+func startHealthPoller(sessions, roles []string, broker *dashboard.SSEBroker) func() {
+	if broker == nil {
+		return func() {}
+	}
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(HealthPollInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				agents := make([]dashboard.AgentHealthStatus, len(sessions))
+				for i, sess := range sessions {
+					h := tmux.CheckPaneHealth(sess)
+					role := ""
+					if i < len(roles) {
+						role = roles[i]
+					}
+					agents[i] = dashboard.AgentHealthStatus{
+						Role:       role,
+						Session:    sess,
+						Alive:      h.Alive,
+						ExitStatus: h.ExitStatus,
+					}
+				}
+				broker.Publish(dashboard.IterationEvent{
+					Type:      "health_status",
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+					Agents:    agents,
+				})
 			}
 		}
-
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-sigCh
-			fmt.Fprintln(os.Stderr, "\nsignal received, cleaning up tmux session(s)...")
-			cleanup()
-			os.Exit(0)
-		}()
-
-		fn()
-		cleanup()
-	} else {
-		fn()
-	}
+	}()
+	return func() { close(done) }
 }
 
 // chatLoop reads user input from stdin and sends each message to the tmux session.

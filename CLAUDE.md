@@ -38,7 +38,7 @@ The inner coding agent is selected via `DEFAULT_MODEL`: models starting with `gp
 
 - `dashboard/web/` — Embedded web dashboard assets (compiled into the binary via `//go:embed`)
 - `go.mod` — Go 1.23, module `github.com/dlee6018/agent-orchestrator`, no external dependencies
-- `.env` — Runtime env vars (contains `TERMINATE_WHEN_QUIT=true`)
+- `.env` — Runtime env vars
 - `~/.config/go-orchestrator/config.json` — Persistent user settings from `/setup` wizard (global, not per-project; highest precedence, overrides `.env`)
 - `README.md` — Project readme
 
@@ -62,7 +62,6 @@ main → helpers, tmux, dashboard, memory, orchestrator, config
 | `CLAUDE_TMUX_SOCKET` | `gt-claude-loop` | tmux socket name |
 | `DEFAULT_MODEL` | `claude` | Selects the inner coding agent (`gpt*` → Codex, otherwise → Claude Code) |
 | `CLAUDE_CMD` | (derived from `DEFAULT_MODEL`) | Overrides the command to run inside tmux |
-| `TERMINATE_WHEN_QUIT` | `false` | Kill tmux session on `/quit` or signal |
 | `AUTONOMOUS_MODE` | `true` | Agent loop when true; existing chatLoop when false |
 | `OPENROUTER_API_KEY` | (required in autonomous mode) | OpenRouter API key |
 | `OPENROUTER_MODEL` | `anthropic/claude-opus-4.6` | Model for the orchestrator LLM |
@@ -109,6 +108,8 @@ Integration tests create isolated tmux servers via unique sockets and clean them
 
 ## Conventions
 
+- Make small, focused changelists — each commit should do one logical thing (e.g., add a function, fix a bug, refactor a single concern). Avoid large, sweeping commits that mix unrelated changes. Even inside a large change, there should be multiple commits
+- Commit often — after completing each small, self-contained unit of work, commit immediately with a clear message. Do not batch multiple unrelated changes into a single commit.
 - After making changes, always provide a summary explaining what was changed and why
 - Add a comment above every function describing what it does
 - When writing tests, cover both success and failure cases — not just the happy path

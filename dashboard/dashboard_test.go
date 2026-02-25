@@ -262,7 +262,7 @@ func TestSSEBroker_TaskInfoIncludesAgent(t *testing.T) {
 // Embedded index.html contains the task-agent and task-agent-model elements.
 func TestStartDashboard_IndexContainsAgentElements(t *testing.T) {
 	b := NewSSEBroker()
-	addr, err := StartDashboard(b, 0)
+	addr, err := StartDashboard(b, 0, nil)
 	if err != nil {
 		t.Fatalf("StartDashboard: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestIterationEvent_MemoryFactsOmitted(t *testing.T) {
 // Dashboard serves static files from the embedded filesystem.
 func TestStartDashboard_ServesStaticFiles(t *testing.T) {
 	b := NewSSEBroker()
-	addr, err := StartDashboard(b, 0)
+	addr, err := StartDashboard(b, 0, nil)
 	if err != nil {
 		t.Fatalf("StartDashboard: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestStartDashboard_ServesStaticFiles(t *testing.T) {
 // Dashboard SSE endpoint streams events.
 func TestStartDashboard_SSEStream(t *testing.T) {
 	b := NewSSEBroker()
-	addr, err := StartDashboard(b, 0)
+	addr, err := StartDashboard(b, 0, nil)
 	if err != nil {
 		t.Fatalf("StartDashboard: %v", err)
 	}
@@ -406,5 +406,117 @@ func TestStartDashboard_SSEStream(t *testing.T) {
 	}
 	if !strings.Contains(line, "test-task") {
 		t.Fatalf("expected task_info event with test-task, got: %s", line)
+	}
+}
+
+// Late subscribers receive the last health_status event on connect.
+func TestSSEBroker_ReplayHealthStatus(t *testing.T) {
+	b := NewSSEBroker()
+
+	// Publish health_status before any subscriber exists.
+	b.Publish(IterationEvent{
+		Type: "health_status",
+		Agents: []AgentHealthStatus{
+			{Role: "agent", Session: "test-sess", Alive: true},
+		},
+	})
+
+	// A late subscriber should immediately receive the health_status replay.
+	ch, unsub := b.Subscribe()
+	defer unsub()
+
+	select {
+	case msg := <-ch:
+		if !strings.Contains(msg, `"health_status"`) {
+			t.Fatalf("replayed message missing type: %s", msg)
+		}
+		if !strings.Contains(msg, `"alive":true`) {
+			t.Fatalf("replayed message missing alive: %s", msg)
+		}
+	default:
+		t.Fatal("expected health_status replay on subscribe, got nothing")
+	}
+}
+
+// POST /api/restart returns success when restartFn succeeds.
+func TestStartDashboard_RestartEndpoint_Success(t *testing.T) {
+	b := NewSSEBroker()
+	called := false
+	restartFn := func(session string) error {
+		called = true
+		if session != "my-sess" {
+			t.Fatalf("expected session %q, got %q", "my-sess", session)
+		}
+		return nil
+	}
+	addr, err := StartDashboard(b, 0, restartFn)
+	if err != nil {
+		t.Fatalf("StartDashboard: %v", err)
+	}
+
+	resp, err := http.Post("http://"+addr+"/api/restart?session=my-sess", "", nil)
+	if err != nil {
+		t.Fatalf("POST /api/restart: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if !called {
+		t.Fatal("restartFn should have been called")
+	}
+}
+
+// POST /api/restart without session parameter returns 400.
+func TestStartDashboard_RestartEndpoint_MissingSession(t *testing.T) {
+	b := NewSSEBroker()
+	addr, err := StartDashboard(b, 0, func(string) error { return nil })
+	if err != nil {
+		t.Fatalf("StartDashboard: %v", err)
+	}
+
+	resp, err := http.Post("http://"+addr+"/api/restart", "", nil)
+	if err != nil {
+		t.Fatalf("POST /api/restart: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+// POST /api/restart with nil restartFn returns 503.
+func TestStartDashboard_RestartEndpoint_NilCallback(t *testing.T) {
+	b := NewSSEBroker()
+	addr, err := StartDashboard(b, 0, nil)
+	if err != nil {
+		t.Fatalf("StartDashboard: %v", err)
+	}
+
+	resp, err := http.Post("http://"+addr+"/api/restart?session=x", "", nil)
+	if err != nil {
+		t.Fatalf("POST /api/restart: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", resp.StatusCode)
+	}
+}
+
+// GET /api/restart returns 405 (method not allowed).
+func TestStartDashboard_RestartEndpoint_WrongMethod(t *testing.T) {
+	b := NewSSEBroker()
+	addr, err := StartDashboard(b, 0, func(string) error { return nil })
+	if err != nil {
+		t.Fatalf("StartDashboard: %v", err)
+	}
+
+	resp, err := http.Get("http://" + addr + "/api/restart?session=x")
+	if err != nil {
+		t.Fatalf("GET /api/restart: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
 	}
 }

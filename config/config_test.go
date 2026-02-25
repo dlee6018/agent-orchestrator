@@ -99,9 +99,6 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 	if cfg.MultiAgentMode != "false" {
 		t.Errorf("MultiAgentMode = %q, want %q", cfg.MultiAgentMode, "false")
 	}
-	if cfg.TerminateWhenQuit != "true" {
-		t.Errorf("TerminateWhenQuit = %q, want %q", cfg.TerminateWhenQuit, "true")
-	}
 	if cfg.AutonomousMode != "true" {
 		t.Errorf("AutonomousMode = %q, want %q", cfg.AutonomousMode, "true")
 	}
@@ -127,12 +124,11 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 func TestSaveConfig_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	original := &Config{
-		DefaultModel:      "claude-opus-4.6",
-		OpenRouterModel:   "anthropic/claude-opus-4.6",
-		DashboardEnabled:  "false",
-		MultiAgentMode:    "true",
-		TerminateWhenQuit: "false",
-		AutonomousMode:    "true",
+		DefaultModel:     "claude-opus-4.6",
+		OpenRouterModel:  "anthropic/claude-opus-4.6",
+		DashboardEnabled: "false",
+		MultiAgentMode:   "true",
+		AutonomousMode:   "true",
 	}
 
 	if err := SaveConfig(dir, original); err != nil {
@@ -160,33 +156,31 @@ func TestSaveConfig_NilConfig(t *testing.T) {
 	}
 }
 
-// TestApplyConfig_SetsEnvVars verifies that all 6 env vars are set correctly.
+// TestApplyConfig_SetsEnvVars verifies that all 5 env vars are set correctly.
 func TestApplyConfig_SetsEnvVars(t *testing.T) {
 	keys := []string{
 		"DEFAULT_MODEL", "OPENROUTER_MODEL", "DASHBOARD_ENABLED",
-		"MULTI_AGENT_MODE", "TERMINATE_WHEN_QUIT", "AUTONOMOUS_MODE",
+		"MULTI_AGENT_MODE", "AUTONOMOUS_MODE",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
 	}
 
 	cfg := &Config{
-		DefaultModel:      "gpt-5.3-codex",
-		OpenRouterModel:   "anthropic/claude-opus-4.6",
-		DashboardEnabled:  "true",
-		MultiAgentMode:    "false",
-		TerminateWhenQuit: "true",
-		AutonomousMode:    "false",
+		DefaultModel:     "gpt-5.3-codex",
+		OpenRouterModel:  "anthropic/claude-opus-4.6",
+		DashboardEnabled: "true",
+		MultiAgentMode:   "false",
+		AutonomousMode:   "false",
 	}
 	ApplyConfig(cfg)
 
 	expected := map[string]string{
-		"DEFAULT_MODEL":       "gpt-5.3-codex",
-		"OPENROUTER_MODEL":    "anthropic/claude-opus-4.6",
-		"DASHBOARD_ENABLED":   "true",
-		"MULTI_AGENT_MODE":    "false",
-		"TERMINATE_WHEN_QUIT": "true",
-		"AUTONOMOUS_MODE":     "false",
+		"DEFAULT_MODEL":     "gpt-5.3-codex",
+		"OPENROUTER_MODEL":  "anthropic/claude-opus-4.6",
+		"DASHBOARD_ENABLED": "true",
+		"MULTI_AGENT_MODE":  "false",
+		"AUTONOMOUS_MODE":   "false",
 	}
 	for k, want := range expected {
 		got := os.Getenv(k)
@@ -234,10 +228,10 @@ func TestApplyConfig_SkipsEmptyFields(t *testing.T) {
 	}
 }
 
-// TestRunSetupWizard_HappyPath simulates valid input for all 6 questions.
+// TestRunSetupWizard_HappyPath simulates valid input for all 5 questions.
 func TestRunSetupWizard_HappyPath(t *testing.T) {
-	// Answers: 1 (gpt-5.3-codex), 1 (anthropic/claude-opus-4.6), 2 (false), 1 (true), 2 (false), 1 (true)
-	input := "1\n1\n2\n1\n2\n1\n"
+	// Answers: 1 (gpt-5.3-codex), 1 (anthropic/claude-opus-4.6), 2 (false), 1 (true), 1 (true)
+	input := "1\n1\n2\n1\n1\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var buf bytes.Buffer
 
@@ -258,9 +252,6 @@ func TestRunSetupWizard_HappyPath(t *testing.T) {
 	if cfg.MultiAgentMode != "true" {
 		t.Errorf("MultiAgentMode = %q, want %q", cfg.MultiAgentMode, "true")
 	}
-	if cfg.TerminateWhenQuit != "false" {
-		t.Errorf("TerminateWhenQuit = %q, want %q", cfg.TerminateWhenQuit, "false")
-	}
 	if cfg.AutonomousMode != "true" {
 		t.Errorf("AutonomousMode = %q, want %q", cfg.AutonomousMode, "true")
 	}
@@ -275,8 +266,8 @@ func TestRunSetupWizard_HappyPath(t *testing.T) {
 // TestRunSetupWizard_InvalidThenValid verifies that invalid input re-prompts and eventually succeeds.
 func TestRunSetupWizard_InvalidThenValid(t *testing.T) {
 	// First question: "abc" (invalid), "0" (out of range), "99" (out of range), then "2" (valid).
-	// Remaining 5 questions answered with "1".
-	input := "abc\n0\n99\n2\n1\n1\n1\n1\n1\n"
+	// Remaining 4 questions answered with "1".
+	input := "abc\n0\n99\n2\n1\n1\n1\n1\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var buf bytes.Buffer
 

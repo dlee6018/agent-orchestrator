@@ -430,6 +430,29 @@ func TmuxArgs(args ...string) []string {
 	return append([]string{"-L", Socket}, args...)
 }
 
+// AgentHealth reports the health of a single tmux pane.
+type AgentHealth struct {
+	Session    string
+	Alive      bool
+	ExitStatus int
+	CurrentCmd string
+}
+
+// CheckPaneHealth returns the health status of the tmux pane for the given session.
+func CheckPaneHealth(session string) AgentHealth {
+	dead, status, cmd, err := tmuxPaneState(session)
+	if err != nil {
+		// If we can't reach the pane, treat it as dead.
+		return AgentHealth{Session: session, Alive: false}
+	}
+	return AgentHealth{
+		Session:    session,
+		Alive:      !dead,
+		ExitStatus: status,
+		CurrentCmd: cmd,
+	}
+}
+
 // CleanupSession kills the tmux session, ignoring errors.
 func CleanupSession(session string) {
 	_ = RunTmux("kill-session", "-t", session)

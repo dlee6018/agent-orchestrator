@@ -245,3 +245,15 @@ func TestTruncateForLog_TinyMax(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, "he")
 	}
 }
+
+// CheckPaneHealth returns a dead AgentHealth when the session doesn't exist.
+func TestCheckPaneHealth_NonExistentSession(t *testing.T) {
+	Socket = ""
+	h := CheckPaneHealth("nonexistent-session-" + t.Name())
+	if h.Alive {
+		t.Fatal("expected Alive=false for non-existent session")
+	}
+	if h.Session != "nonexistent-session-"+t.Name() {
+		t.Fatalf("Session = %q, want %q", h.Session, "nonexistent-session-"+t.Name())
+	}
+}

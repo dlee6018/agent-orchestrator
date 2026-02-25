@@ -30,7 +30,9 @@
         completionMessage: document.getElementById("completion-message"),
         taskMode: document.getElementById("task-mode"),
         taskAgent: document.getElementById("task-agent"),
-        taskAgentModel: document.getElementById("task-agent-model")
+        taskAgentModel: document.getElementById("task-agent-model"),
+        agentHealth: document.getElementById("agent-health"),
+        healthIndicators: document.getElementById("health-indicators")
     };
 
     function formatDuration(ms) {
@@ -285,6 +287,51 @@
                         els.iterations.insertBefore(errCard, els.iterations.firstChild);
                     } else {
                         els.iterations.appendChild(errCard);
+                    }
+                }
+                break;
+
+            case "health_status":
+                if (data.agents && data.agents.length > 0) {
+                    els.agentHealth.classList.remove("hidden");
+                    els.healthIndicators.innerHTML = "";
+                    for (var hi = 0; hi < data.agents.length; hi++) {
+                        var agent = data.agents[hi];
+                        var card = document.createElement("div");
+                        card.className = "health-card";
+
+                        var dot = document.createElement("span");
+                        dot.className = "health-dot " + (agent.alive ? "alive" : "dead");
+                        card.appendChild(dot);
+
+                        var label = document.createElement("span");
+                        label.className = "health-label";
+                        label.textContent = agent.role || agent.session;
+                        card.appendChild(label);
+
+                        var status = document.createElement("span");
+                        status.className = "health-status-text";
+                        status.textContent = agent.alive ? "Running" : "Dead (exit " + agent.exit_status + ")";
+                        card.appendChild(status);
+
+                        if (!agent.alive) {
+                            var btn = document.createElement("button");
+                            btn.className = "health-restart-btn";
+                            btn.textContent = "Restart";
+                            btn.setAttribute("data-session", agent.session);
+                            btn.addEventListener("click", (function(sess) {
+                                return function() {
+                                    fetch("/api/restart?session=" + encodeURIComponent(sess), { method: "POST" })
+                                        .then(function(r) {
+                                            if (!r.ok) r.text().then(function(t) { alert("Restart failed: " + t); });
+                                        })
+                                        .catch(function(e) { alert("Restart error: " + e); });
+                                };
+                            })(agent.session));
+                            card.appendChild(btn);
+                        }
+
+                        els.healthIndicators.appendChild(card);
                     }
                 }
                 break;

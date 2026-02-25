@@ -76,6 +76,7 @@ func TestLoadConfig_ValidFile(t *testing.T) {
   "openrouter_model": "anthropic/claude-opus-4.6",
   "dashboard_enabled": "true",
   "multi_agent_mode": "false",
+  "terminate_when_quit": "true",
   "autonomous_mode": "true"
 }`
 	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(data), 0644); err != nil {

@@ -28,6 +28,7 @@ Interactive setup wizard and persistent config file (`config.json`) management. 
 | `ApplyConfig(cfg)` | Sets env vars via `os.Setenv` for each non-empty field |
 | `RunSetupWizard(scanner, w)` | Interactive numbered-choice wizard (5 questions), returns completed Config |
 
+
 ## Key Implementation Details
 
 - All Config fields are strings (not bools) because they map directly to env var values consumed by `helpers.EnvBool`/`helpers.EnvOrDefault`

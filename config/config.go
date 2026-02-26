@@ -23,6 +23,8 @@ type Config struct {
 	DashboardEnabled string `json:"dashboard_enabled"`
 	MultiAgentMode   string `json:"multi_agent_mode"`
 	AutonomousMode   string `json:"autonomous_mode"`
+	WorktreeMode     string `json:"worktree_mode"`
+	SandboxMode      string `json:"sandbox_mode"`
 }
 
 // question describes a single wizard prompt with its numbered choices.
@@ -39,6 +41,8 @@ var wizardQuestions = []question{
 	{"Enable web dashboard", "DASHBOARD_ENABLED", []string{"true", "false"}},
 	{"Enable multi-agent mode", "MULTI_AGENT_MODE", []string{"true", "false"}},
 	{"Enable autonomous mode", "AUTONOMOUS_MODE", []string{"true", "false"}},
+	{"Enable worktree mode (Claude Code only)", "WORKTREE_MODE", []string{"true", "false"}},
+	{"Enable sandbox mode (Claude Code only)", "SANDBOX_MODE", []string{"true", "false"}},
 }
 
 // LoadConfig reads config.json from dir and returns the parsed Config.
@@ -102,6 +106,8 @@ func ApplyConfig(cfg *Config) {
 		{"DASHBOARD_ENABLED", cfg.DashboardEnabled},
 		{"MULTI_AGENT_MODE", cfg.MultiAgentMode},
 		{"AUTONOMOUS_MODE", cfg.AutonomousMode},
+		{"WORKTREE_MODE", cfg.WorktreeMode},
+		{"SANDBOX_MODE", cfg.SandboxMode},
 	}
 	for _, p := range pairs {
 		if p.val != "" {
@@ -132,6 +138,8 @@ func RunSetupWizard(scanner *bufio.Scanner, w io.Writer) (*Config, error) {
 		DashboardEnabled: answers[2],
 		MultiAgentMode:   answers[3],
 		AutonomousMode:   answers[4],
+		WorktreeMode:     answers[5],
+		SandboxMode:      answers[6],
 	}
 	return cfg, nil
 }

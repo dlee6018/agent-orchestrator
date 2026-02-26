@@ -19,23 +19,23 @@ var webContent embed.FS
 
 // IterationEvent represents an SSE event payload for the web dashboard.
 type IterationEvent struct {
-	Type         string               `json:"type"` // "task_info", "iteration_start", "iteration_end", "error", "complete", "health_status"
-	Iteration    int                  `json:"iteration"`
-	MaxIter      int                  `json:"max_iter"`
-	Timestamp    string               `json:"timestamp"`
-	DurationMs   int64                `json:"duration_ms,omitempty"`
-	Tokens       *TokenUsage          `json:"tokens,omitempty"`
-	Orchestrator string               `json:"orchestrator,omitempty"`
-	ClaudeOutput string               `json:"claude_output,omitempty"`
-	AgentOutput  string               `json:"agent_output,omitempty"`
-	MemoryFacts  []string             `json:"memory_facts,omitempty"`
-	Error        string               `json:"error,omitempty"`
-	Task         string               `json:"task,omitempty"`
-	Model        string               `json:"model,omitempty"`       // orchestrator LLM model (OPENROUTER_MODEL)
-	AgentModel   string               `json:"agent_model,omitempty"` // inner coding agent model (DEFAULT_MODEL)
-	Agent        string               `json:"agent,omitempty"`       // which agent was addressed (multi-agent mode)
-	Mode         string               `json:"mode,omitempty"`        // "multi-agent" when applicable
-	Agents       []AgentHealthStatus  `json:"agents,omitempty"`      // per-agent health (health_status events)
+	Type         string              `json:"type"` // "task_info", "iteration_start", "iteration_end", "error", "complete", "health_status"
+	Iteration    int                 `json:"iteration"`
+	MaxIter      int                 `json:"max_iter"`
+	Timestamp    string              `json:"timestamp"`
+	DurationMs   int64               `json:"duration_ms,omitempty"`
+	Tokens       *TokenUsage         `json:"tokens,omitempty"`
+	Orchestrator string              `json:"orchestrator,omitempty"`
+	ClaudeOutput string              `json:"claude_output,omitempty"`
+	AgentOutput  string              `json:"agent_output,omitempty"`
+	MemoryFacts  []string            `json:"memory_facts,omitempty"`
+	Error        string              `json:"error,omitempty"`
+	Task         string              `json:"task,omitempty"`
+	Model        string              `json:"model,omitempty"`       // orchestrator LLM model (OPENROUTER_MODEL)
+	AgentModel   string              `json:"agent_model,omitempty"` // inner coding agent model (DEFAULT_MODEL)
+	Agent        string              `json:"agent,omitempty"`       // which agent was addressed (multi-agent mode)
+	Mode         string              `json:"mode,omitempty"`        // "multi-agent" when applicable
+	Agents       []AgentHealthStatus `json:"agents,omitempty"`      // per-agent health (health_status events)
 }
 
 // AgentHealthStatus describes the health of a single agent session.

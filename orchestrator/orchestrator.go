@@ -129,9 +129,9 @@ func AutonomousLoop(session, workDir, command, apiKey, model, task, agentName, a
 			time.Sleep(5 * time.Second)
 			if MaxIterations > 0 {
 				// Decrement i so the subsequent loop increment (i++) restores it
-			// to its pre-iteration value, effectively not counting this API
-			// error toward the iteration limit.
-			i--
+				// to its pre-iteration value, effectively not counting this API
+				// error toward the iteration limit.
+				i--
 			}
 			continue
 		}

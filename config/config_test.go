@@ -129,6 +129,7 @@ func TestSaveConfig_RoundTrip(t *testing.T) {
 		DashboardEnabled: "false",
 		MultiAgentMode:   "true",
 		AutonomousMode:   "true",
+		WorktreeMode:     "false",
 	}
 
 	if err := SaveConfig(dir, original); err != nil {
@@ -156,11 +157,11 @@ func TestSaveConfig_NilConfig(t *testing.T) {
 	}
 }
 
-// TestApplyConfig_SetsEnvVars verifies that all 5 env vars are set correctly.
+// TestApplyConfig_SetsEnvVars verifies that all 6 env vars are set correctly.
 func TestApplyConfig_SetsEnvVars(t *testing.T) {
 	keys := []string{
 		"DEFAULT_MODEL", "OPENROUTER_MODEL", "DASHBOARD_ENABLED",
-		"MULTI_AGENT_MODE", "AUTONOMOUS_MODE",
+		"MULTI_AGENT_MODE", "AUTONOMOUS_MODE", "WORKTREE_MODE",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -172,6 +173,7 @@ func TestApplyConfig_SetsEnvVars(t *testing.T) {
 		DashboardEnabled: "true",
 		MultiAgentMode:   "false",
 		AutonomousMode:   "false",
+		WorktreeMode:     "true",
 	}
 	ApplyConfig(cfg)
 
@@ -181,6 +183,7 @@ func TestApplyConfig_SetsEnvVars(t *testing.T) {
 		"DASHBOARD_ENABLED": "true",
 		"MULTI_AGENT_MODE":  "false",
 		"AUTONOMOUS_MODE":   "false",
+		"WORKTREE_MODE":     "true",
 	}
 	for k, want := range expected {
 		got := os.Getenv(k)
@@ -228,10 +231,10 @@ func TestApplyConfig_SkipsEmptyFields(t *testing.T) {
 	}
 }
 
-// TestRunSetupWizard_HappyPath simulates valid input for all 5 questions.
+// TestRunSetupWizard_HappyPath simulates valid input for all 6 questions.
 func TestRunSetupWizard_HappyPath(t *testing.T) {
-	// Answers: 1 (gpt-5.3-codex), 1 (anthropic/claude-opus-4.6), 2 (false), 1 (true), 1 (true)
-	input := "1\n1\n2\n1\n1\n"
+	// Answers: 1 (gpt-5.3-codex), 1 (anthropic/claude-opus-4.6), 2 (false), 1 (true), 1 (true), 1 (true)
+	input := "1\n1\n2\n1\n1\n1\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var buf bytes.Buffer
 
@@ -255,6 +258,9 @@ func TestRunSetupWizard_HappyPath(t *testing.T) {
 	if cfg.AutonomousMode != "true" {
 		t.Errorf("AutonomousMode = %q, want %q", cfg.AutonomousMode, "true")
 	}
+	if cfg.WorktreeMode != "true" {
+		t.Errorf("WorktreeMode = %q, want %q", cfg.WorktreeMode, "true")
+	}
 
 	// Verify the output contains wizard header.
 	output := buf.String()
@@ -266,8 +272,8 @@ func TestRunSetupWizard_HappyPath(t *testing.T) {
 // TestRunSetupWizard_InvalidThenValid verifies that invalid input re-prompts and eventually succeeds.
 func TestRunSetupWizard_InvalidThenValid(t *testing.T) {
 	// First question: "abc" (invalid), "0" (out of range), "99" (out of range), then "2" (valid).
-	// Remaining 4 questions answered with "1".
-	input := "abc\n0\n99\n2\n1\n1\n1\n1\n"
+	// Remaining 5 questions answered with "1".
+	input := "abc\n0\n99\n2\n1\n1\n1\n1\n1\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var buf bytes.Buffer
 

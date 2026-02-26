@@ -162,7 +162,7 @@ func TestSaveConfig_NilConfig(t *testing.T) {
 	}
 }
 
-// TestApplyConfig_SetsEnvVars verifies that all 6 env vars are set correctly.
+// TestApplyConfig_SetsEnvVars verifies that all 7 env vars are set correctly.
 func TestApplyConfig_SetsEnvVars(t *testing.T) {
 	keys := []string{
 		"DEFAULT_MODEL", "OPENROUTER_MODEL", "DASHBOARD_ENABLED",
@@ -238,10 +238,10 @@ func TestApplyConfig_SkipsEmptyFields(t *testing.T) {
 	}
 }
 
-// TestRunSetupWizard_HappyPath simulates valid input for all 6 questions.
+// TestRunSetupWizard_HappyPath simulates valid input for all 7 questions.
 func TestRunSetupWizard_HappyPath(t *testing.T) {
-	// Answers: 1 (gpt-5.3-codex), 1 (anthropic/claude-opus-4.6), 2 (false), 1 (true), 1 (true), 1 (true), 1 (true)
-	input := "1\n1\n2\n1\n1\n1\n1\n"
+	// Answers: 1 (gpt-5.3-codex), 1 (anthropic/claude-opus-4.6), 2 (false), 1 (true), 1 (true), 1 (true), 2 (false)
+	input := "1\n1\n2\n1\n1\n1\n2\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var buf bytes.Buffer
 
@@ -268,8 +268,8 @@ func TestRunSetupWizard_HappyPath(t *testing.T) {
 	if cfg.WorktreeMode != "true" {
 		t.Errorf("WorktreeMode = %q, want %q", cfg.WorktreeMode, "true")
 	}
-	if cfg.SandboxMode != "true" {
-		t.Errorf("SandboxMode = %q, want %q", cfg.SandboxMode, "true")
+	if cfg.SandboxMode != "false" {
+		t.Errorf("SandboxMode = %q, want %q", cfg.SandboxMode, "false")
 	}
 
 	// Verify the output contains wizard header.

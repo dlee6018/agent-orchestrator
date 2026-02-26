@@ -93,6 +93,50 @@ func TestWorktreeMode_DoesNotAffectCodex(t *testing.T) {
 	}
 }
 
+// SANDBOX_MODE=true replaces --dangerously-skip-permissions with sandbox settings.
+func TestSandboxMode_ReplacesPermissions(t *testing.T) {
+	agentCommand, agentName := helpers.ResolveAgentConfig("claude")
+	if agentName != "Claude Code" {
+		t.Fatalf("precondition: expected Claude Code, got %q", agentName)
+	}
+
+	// Simulate the main.go sandbox injection logic.
+	sandboxEnabled := true
+	if sandboxEnabled && agentName == "Claude Code" {
+		agentCommand = strings.Replace(agentCommand, "--dangerously-skip-permissions",
+			`--settings {"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}`, 1)
+	}
+
+	if strings.Contains(agentCommand, "--dangerously-skip-permissions") {
+		t.Fatalf("expected --dangerously-skip-permissions to be removed, got %q", agentCommand)
+	}
+	if !strings.Contains(agentCommand, `--settings {"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}`) {
+		t.Fatalf("expected sandbox settings in command, got %q", agentCommand)
+	}
+	// Verify --setting-sources user is still present.
+	if !strings.Contains(agentCommand, "--setting-sources user") {
+		t.Fatalf("expected --setting-sources user in command, got %q", agentCommand)
+	}
+}
+
+// SANDBOX_MODE does not affect Codex command.
+func TestSandboxMode_DoesNotAffectCodex(t *testing.T) {
+	agentCommand, agentName := helpers.ResolveAgentConfig("gpt-4o")
+	if agentName != "Codex" {
+		t.Fatalf("precondition: expected Codex, got %q", agentName)
+	}
+
+	sandboxEnabled := true
+	if sandboxEnabled && agentName == "Claude Code" {
+		agentCommand = strings.Replace(agentCommand, "--dangerously-skip-permissions",
+			`--settings {"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}`, 1)
+	}
+
+	if agentCommand != "codex" {
+		t.Fatalf("expected codex command unchanged, got %q", agentCommand)
+	}
+}
+
 // DEFAULT_MODEL not starting with "bedrock" does not override Provider.
 func TestNonBedrockModel_KeepsDefaultProvider(t *testing.T) {
 	oldProvider := orchestrator.Provider

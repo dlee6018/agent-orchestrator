@@ -42,7 +42,7 @@ var wizardQuestions = []question{
 	{"Enable multi-agent mode", "MULTI_AGENT_MODE", []string{"true", "false"}},
 	{"Enable autonomous mode", "AUTONOMOUS_MODE", []string{"true", "false"}},
 	{"Enable worktree mode (Claude Code only)", "WORKTREE_MODE", []string{"true", "false"}},
-	{"Enable sandbox mode (runs Claude Code with --sandbox)", "SANDBOX_MODE", []string{"true", "false"}},
+	{"Enable sandbox mode (Claude Code only)", "SANDBOX_MODE", []string{"true", "false"}},
 }
 
 // LoadConfig reads config.json from dir and returns the parsed Config.

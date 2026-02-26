@@ -55,6 +55,11 @@ func main() {
 	}
 	defaultModel := helpers.EnvOrDefault("DEFAULT_MODEL", "claude")
 	agentCommand, agentName := helpers.ResolveAgentConfig(defaultModel)
+	// Replace --dangerously-skip-permissions with sandbox settings when sandbox mode is enabled.
+	if helpers.EnvBool("SANDBOX_MODE", false) && agentName == "Claude Code" {
+		agentCommand = strings.Replace(agentCommand, "--dangerously-skip-permissions",
+			`--settings {"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}`, 1)
+	}
 	// Append --worktree flag for Claude Code when worktree mode is enabled.
 	if helpers.EnvBool("WORKTREE_MODE", false) && agentName == "Claude Code" {
 		agentCommand = strings.Replace(agentCommand, "claude ", "claude --worktree ", 1)

@@ -74,6 +74,7 @@ main → helpers, tmux, dashboard, memory, orchestrator, config
 | `CONTEXT_SUMMARY_THRESHOLD` | `30` | Message count before older context is summarized (multi-agent mode) |
 | `CONTEXT_KEEP_RECENT` | `10` | Number of recent messages to preserve when summarizing context (multi-agent mode) |
 | `WORKTREE_MODE` | `false` | Run Claude Code with `--worktree` flag (Claude Code only, ignored for Codex) |
+| `SANDBOX_MODE` | `false` | Use sandbox with auto-allow instead of `--dangerously-skip-permissions` (Claude Code only, ignored for Codex) |
 
 ## Build & Run
 

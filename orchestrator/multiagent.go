@@ -208,9 +208,9 @@ func MultiAgentLoop(agents []AgentState, workDir, command, apiKey, model, agentN
 			time.Sleep(5 * time.Second)
 			if MaxIterations > 0 {
 				// Decrement i so the subsequent loop increment (i++) restores it
-			// to its pre-iteration value, effectively not counting this API
-			// error toward the iteration limit.
-			i--
+				// to its pre-iteration value, effectively not counting this API
+				// error toward the iteration limit.
+				i--
 			}
 			continue
 		}

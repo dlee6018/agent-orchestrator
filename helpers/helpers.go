@@ -73,9 +73,13 @@ func EnvBool(key string, fallback bool) bool {
 
 // ResolveAgentConfig maps a DEFAULT_MODEL value to the CLI command and display name.
 // Models starting with "gpt" or "codex" (case-insensitive) resolve to Codex; all others default to Claude Code.
+// When the SANDBOX_MODE env var is "true", the Claude command includes --sandbox.
 func ResolveAgentConfig(defaultModel string) (command, displayName string) {
 	if strings.HasPrefix(strings.ToLower(defaultModel), "gpt") || strings.HasPrefix(strings.ToLower(defaultModel), "codex") {
 		return "codex", "Codex"
+	}
+	if EnvBool("SANDBOX_MODE", false) {
+		return "claude --sandbox --dangerously-skip-permissions --setting-sources user", "Claude Code"
 	}
 	return "claude --dangerously-skip-permissions --setting-sources user", "Claude Code"
 }

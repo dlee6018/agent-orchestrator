@@ -252,3 +252,41 @@ func TestResolveAgentConfig_CodexPrefix(t *testing.T) {
 		t.Fatalf("name: got %q, want %q", name, "Codex")
 	}
 }
+
+// ResolveAgentConfig includes --sandbox flag when SANDBOX_MODE is true.
+func TestResolveAgentConfig_SandboxMode(t *testing.T) {
+	t.Setenv("SANDBOX_MODE", "true")
+	cmd, name := ResolveAgentConfig("claude-opus-4")
+	want := "claude --sandbox --dangerously-skip-permissions --setting-sources user"
+	if cmd != want {
+		t.Fatalf("command: got %q, want %q", cmd, want)
+	}
+	if name != "Claude Code" {
+		t.Fatalf("name: got %q, want %q", name, "Claude Code")
+	}
+}
+
+// ResolveAgentConfig does not include --sandbox when SANDBOX_MODE is false.
+func TestResolveAgentConfig_SandboxModeDisabled(t *testing.T) {
+	t.Setenv("SANDBOX_MODE", "false")
+	cmd, name := ResolveAgentConfig("claude-opus-4")
+	want := "claude --dangerously-skip-permissions --setting-sources user"
+	if cmd != want {
+		t.Fatalf("command: got %q, want %q", cmd, want)
+	}
+	if name != "Claude Code" {
+		t.Fatalf("name: got %q, want %q", name, "Claude Code")
+	}
+}
+
+// ResolveAgentConfig does not add --sandbox to codex even when SANDBOX_MODE is true.
+func TestResolveAgentConfig_SandboxModeCodex(t *testing.T) {
+	t.Setenv("SANDBOX_MODE", "true")
+	cmd, name := ResolveAgentConfig("gpt-4o")
+	if cmd != "codex" {
+		t.Fatalf("command: got %q, want %q", cmd, "codex")
+	}
+	if name != "Codex" {
+		t.Fatalf("name: got %q, want %q", name, "Codex")
+	}
+}
